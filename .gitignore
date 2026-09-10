@@ -1,0 +1,18 @@
+# Packaging build artifacts
+/pkg/
+/src/
+*.pkg.tar.zst
+*.pkg.tar.xz
+*.pkg.tar.gz
+
+# Downloaded binaries and temp files
+droid.raw
+droid
+rg
+*.sha256
+*.tmp_patch
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class

@@ -1,0 +1,315 @@
+name: Check Upstream, Patch & Build Factory CLI
+
+'on':
+  schedule:
+    # Check 3x daily (06:00, 14:00, 22:00 UTC) - takes <10s CPU if version is unchanged
+    - cron: '0 6,14,22 * * *'
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - 'README.md'
+      - '.gitignore'
+      - 'LICENSE'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force rebuild even if version has not changed'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  build-and-test:
+    name: build-and-test
+    runs-on: ubuntu-latest
+    if: github.event_name != 'workflow_dispatch' || github.actor == github.repository_owner
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      should_build: ${{ steps.check_version.outputs.should_build }}
+      upstream_version: ${{ steps.check_version.outputs.upstream_version }}
+    steps:
+      - name: Verify authorized maintainer dispatch
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "${{ github.actor }}" != "${{ github.repository_owner }}" ]; then
+            echo "::error::Unauthorized manual trigger by ${{ github.actor }}. Only ${{ github.repository_owner }} may trigger this workflow manually."
+            exit 1
+          fi
+          echo "Manual trigger authorized for maintainer: ${{ github.actor }}"
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Install Python & Shell Linters
+        run: |
+          pip install flake8
+          sudo apt-get update -qq && sudo apt-get install -qq -y shellcheck shfmt
+
+      - name: Run static linters and format checks
+        run: |
+          echo "==> Validating Python syntax & bytecode..."
+          python3 -m py_compile patch-droid.py scripts/*.py tests/*.py
+          echo "==> Running flake8 Python linter..."
+          flake8 --max-line-length=120 --extend-ignore=E203 patch-droid.py scripts/ tests/
+          echo "==> Running shellcheck on shell scripts & PKGBUILD..."
+          shellcheck scripts/patch-macos.sh scripts/build-in-container.sh
+          shellcheck -s bash factory-ai-droid-cli-rnoz-bin.install
+          shellcheck -s bash -e SC2034,SC2154,SC2164 PKGBUILD
+          echo "==> Verifying shell script formatting with shfmt..."
+          shfmt -i 2 -ci -d scripts/ factory-ai-droid-cli-rnoz-bin.install
+
+      - name: Run security audit via aurscan
+        run: |
+          echo "==> Fetching pinned aurscan v0.9.0 security scanner..."
+          sudo curl -fsSL https://github.com/manticore-projects/aurscan/releases/download/v0.9.0/aurscan-linux-amd64 -o /usr/local/bin/aurscan
+          echo "07659ff14b7f416a8aaf254175138ed464947922d483081f837dc41a2e2424c5  /usr/local/bin/aurscan" | sha256sum -c
+          sudo chmod +x /usr/local/bin/aurscan
+          echo "==> Running static rule security audit on repository..."
+          aurscan --rules-only .
+
+      - name: Run offline synthetic fixtures & breakage simulations
+        run: |
+          echo "==> Running offline synthetic patcher fixtures..."
+          python3 tests/test_versions.py --offline
+          echo "==> Running breakage & recovery simulation suite..."
+          python3 tests/simulate_breakage.py
+
+      - name: Detect and validate upstream Factory CLI version
+        id: check_version
+        run: |
+          UPSTREAM_RAW=$(curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused "https://app.factory.ai/cli" | grep -oP 'VER="\K[0-9]+\.[0-9]+\.[0-9]+' || true)
+          if [[ ! "$UPSTREAM_RAW" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Failed to fetch a valid semantic version from upstream endpoint" >&2
+            exit 1
+          fi
+
+          echo "upstream_version=$UPSTREAM_RAW" >> $GITHUB_OUTPUT
+          CURRENT_VER=$(grep -oP '^pkgver=\K.*' PKGBUILD)
+          echo "current_version=$CURRENT_VER" >> $GITHUB_OUTPUT
+          echo "Upstream version: $UPSTREAM_RAW"
+          echo "Current  version: $CURRENT_VER"
+
+          if [ "$UPSTREAM_RAW" != "$CURRENT_VER" ] || [ "${{ inputs.force_build }}" = "true" ]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "Version is up to date ($CURRENT_VER). No build needed."
+          fi
+
+      - name: Run multi-version patcher validation
+        if: steps.check_version.outputs.should_build == 'true'
+        run: |
+          python3 tests/test_versions.py
+
+      - name: Build and smoke test package in Arch Linux container
+        if: steps.check_version.outputs.should_build == 'true'
+        run: |
+          chmod +x scripts/build-in-container.sh
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE":/github/workspace \
+            archlinux:base-devel \
+            /github/workspace/scripts/build-in-container.sh "${{ steps.check_version.outputs.upstream_version }}"
+
+      - name: Upload package artifacts
+        if: steps.check_version.outputs.should_build == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: package-artifacts-${{ steps.check_version.outputs.upstream_version }}
+          path: |
+            *.pkg.tar.zst
+            PKGBUILD
+            .SRCINFO
+
+      - name: Report upstream breakage on failure
+        if: failure() && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+          AUR_PKG_NAME: ${{ vars.AUR_PKG_NAME || 'factory-ai-droid-cli-rnoz-bin' }}
+          UPSTREAM_VER: ${{ steps.check_version.outputs.upstream_version || 'unknown' }}
+        run: |
+          echo "==> Build/test failed on main branch. Triggering breakage alerts..."
+          
+          EXISTING_ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "upstream-breakage" --state open --json number --jq '.[0].number' || true)
+          if [ -z "$EXISTING_ISSUE" ]; then
+            echo "==> Creating GitHub issue to alert maintainer..."
+            cat << 'EOF' > /tmp/issue-body.md
+          ### Summary
+
+          The automated check and build workflow failed during package verification for **Factory CLI v${UPSTREAM_VER}**.
+
+          - **Workflow Run**: [Run #${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})
+          - **Target Version**: `${UPSTREAM_VER}`
+          - **Commit**: `${GITHUB_SHA}`
+
+          ### Upstream References
+
+          - **Official Changelog**: [Factory Release Notes](https://docs.factory.ai/changelog) (`https://docs.factory.ai/changelog/release-notes.md`)
+          - **Factory CLI Docs**: [Droid CLI Reference](https://docs.factory.ai/droid-cli/cli-reference)
+          - **Upstream Install Script**: `https://app.factory.ai/cli`
+          - **Upstream Binary Base**: `https://downloads.factory.ai/factory-cli/releases/`
+          EOF
+            sed -i 's/^          //' /tmp/issue-body.md
+            sed -i "s/\${UPSTREAM_VER}/$UPSTREAM_VER/g" /tmp/issue-body.md
+            sed -i "s/\${GITHUB_RUN_ID}/$GITHUB_RUN_ID/g" /tmp/issue-body.md
+            sed -i "s/\${GITHUB_SHA}/$GITHUB_SHA/g" /tmp/issue-body.md
+            sed -i "s|\${GITHUB_SERVER_URL}|$GITHUB_SERVER_URL|g" /tmp/issue-body.md
+            sed -i "s|\${GITHUB_REPOSITORY}|$GITHUB_REPOSITORY|g" /tmp/issue-body.md
+
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "Upstream Build Verification Failure: Factory CLI v${UPSTREAM_VER}" \
+              --label "upstream-breakage" \
+              --body-file /tmp/issue-body.md || true
+          else
+            echo "==> Breakage issue #$EXISTING_ISSUE is already open."
+          fi
+
+          if [ -n "$AUR_SSH_KEY" ]; then
+            echo "==> Flagging package out-of-date on AUR..."
+            mkdir -p ~/.ssh
+            KEY_FILE="$(mktemp ~/.ssh/aur_key.XXXXXX)"
+            trap 'rm -f "$KEY_FILE"' EXIT
+            echo "$AUR_SSH_KEY" > "$KEY_FILE"
+            chmod 600 "$KEY_FILE"
+            echo "aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN" >> ~/.ssh/known_hosts
+            echo "aur.archlinux.org ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBLMiLrP8pVi5BFX2i3vepSUnpedeiewE5XptnUnau+ZoeUOPkpoCgZZuYfpaIQfhhJJI5qgnjJmr4hyJbe/zxow=" >> ~/.ssh/known_hosts
+            ssh -i "$KEY_FILE" -o StrictHostKeyChecking=yes aur@aur.archlinux.org "flag $AUR_PKG_NAME 'Automated build failed verification: new upstream release requires patch update'" || true
+          fi
+
+  publish:
+    name: publish
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' && needs.build-and-test.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: package-artifacts-${{ needs.build-and-test.outputs.upstream_version }}
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_VER: ${{ needs.build-and-test.outputs.upstream_version }}
+        run: |
+          UPSTREAM_NOTES=$(python3 scripts/fetch-changelog.py "$UPSTREAM_VER")
+
+          cat << 'EOF' > /tmp/release-notes.md
+          ## Factory CLI v${UPSTREAM_VER} (Zero-Waste Patched)
+
+          ### Upstream Changes & Release Notes
+          __UPSTREAM_NOTES__
+
+          ---
+
+          ### Package Details
+          - **Zero-Waste Titling**: Neutralizes automatic background Claude Haiku 4.5 LLM titling calls on every prompt.
+          - **Single Lean Binary**: Package contains only one binary compiled/chosen for the target CPU architecture.
+          - **Universal Support**: Handles AVX2-optimized x86_64, non-AVX2 baseline x86_64, aarch64, and macOS.
+          - **Official Factory Changelog**: [Factory Release Notes](https://docs.factory.ai/changelog)
+
+          ### Installation
+
+          **Arch Linux (AUR):**
+          ```bash
+          yay -S factory-ai-droid-cli-rnoz-bin
+          ```
+
+          **macOS:**
+          ```bash
+          ./scripts/patch-macos.sh
+          ```
+          EOF
+          sed -i 's/^          //' /tmp/release-notes.md
+          sed -i "s/\${UPSTREAM_VER}/$UPSTREAM_VER/g" /tmp/release-notes.md
+          # Insert upstream notes safely
+          python3 -c '
+          import os
+          notes = os.environ.get("UPSTREAM_NOTES", "")
+          with open("/tmp/release-notes.md", "r") as f:
+              content = f.read()
+          content = content.replace("__UPSTREAM_NOTES__", notes)
+          with open("/tmp/release-notes.md", "w") as f:
+              f.write(content)
+          '
+
+          gh release create "v${UPSTREAM_VER}" *.pkg.tar.zst \
+            --title "Factory CLI v${UPSTREAM_VER} (Patched)" \
+            --notes-file /tmp/release-notes.md \
+            --target main
+
+      - name: Commit updated PKGBUILD and .SRCINFO to repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          git commit -m "chore(release): bump factory-ai-droid-cli-rnoz-bin to v${{ needs.build-and-test.outputs.upstream_version }}" || exit 0
+          git push
+
+      - name: "Publish to AUR (Optional)"
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+          AUR_USERNAME: ${{ secrets.AUR_USERNAME || 'rNoz' }}
+          AUR_EMAIL: ${{ secrets.AUR_EMAIL || '8237539+rNoz@users.noreply.github.com' }}
+          AUR_PKG_NAME: ${{ vars.AUR_PKG_NAME || 'factory-ai-droid-cli-rnoz-bin' }}
+        run: |
+          if [ -z "$AUR_SSH_KEY" ]; then
+            echo "==> AUR_SSH_KEY secret is not set. Skipping AUR publish."
+            exit 0
+          fi
+
+          mkdir -p ~/.ssh
+          KEY_FILE="$(mktemp ~/.ssh/aur_key.XXXXXX)"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          echo "$AUR_SSH_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+
+          echo "aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN" >> ~/.ssh/known_hosts
+          echo "aur.archlinux.org ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBLMiLrP8pVi5BFX2i3vepSUnpedeiewE5XptnUnau+ZoeUOPkpoCgZZuYfpaIQfhhJJI5qgnjJmr4hyJbe/zxow=" >> ~/.ssh/known_hosts
+          
+          export GIT_SSH_COMMAND="ssh -i $KEY_FILE -o StrictHostKeyChecking=yes"
+          git clone "ssh://aur@aur.archlinux.org/${AUR_PKG_NAME}.git" /tmp/aur-repo
+          cp PKGBUILD .SRCINFO patch-droid.py factory-ai-droid-cli-rnoz-bin.install /tmp/aur-repo/
+          cd /tmp/aur-repo
+          git config user.name "$AUR_USERNAME"
+          git config user.email "$AUR_EMAIL"
+          git checkout -B master
+          git add PKGBUILD .SRCINFO patch-droid.py factory-ai-droid-cli-rnoz-bin.install
+          git commit -m "Update to v${{ needs.build-and-test.outputs.upstream_version }}" || exit 0
+          git push origin master
+          ssh -i "$KEY_FILE" -o StrictHostKeyChecking=yes aur@aur.archlinux.org unflag "$AUR_PKG_NAME" || true
+
+      - name: Close resolved breakage issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          EXISTING_ISSUES=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "upstream-breakage" --state open --json number --jq '.[].number' || true)
+          for issue_num in $EXISTING_ISSUES; do
+            if [ -n "$issue_num" ]; then
+              gh issue close "$issue_num" --repo "$GITHUB_REPOSITORY" --comment "Resolved automatically by successful release v${{ needs.build-and-test.outputs.upstream_version }}." || true
+            fi
+          done
