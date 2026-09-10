@@ -321,7 +321,7 @@ jobs:
           export GIT_SSH_COMMAND="ssh -i $KEY_FILE -o StrictHostKeyChecking=yes"
           git clone "ssh://aur@aur.archlinux.org/${AUR_PKG_NAME}.git" /tmp/aur-repo
           cp PKGBUILD .SRCINFO patch-title.py patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install /tmp/aur-repo/
-          rm -f /tmp/aur-repo/patch-droid.py
+          git -C /tmp/aur-repo rm --ignore-unmatch -f patch-droid.py
           if [ -f SRCINFO ]; then
             cp -f SRCINFO /tmp/aur-repo/.SRCINFO
           fi
