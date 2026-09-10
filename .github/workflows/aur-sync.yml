@@ -157,7 +157,7 @@ jobs:
 
           ### Upstream References
 
-          - **Official Changelog**: [Factory Release Notes](https://docs.factory.ai/changelog) (`https://docs.factory.ai/changelog/release-notes.md`)
+          - **Official Changelog**: [Factory Release Notes](https://docs.factory.ai/changelog/release-notes) (`https://docs.factory.ai/changelog/release-notes.md`)
           - **Factory CLI Docs**: [Droid CLI Reference](https://docs.factory.ai/droid-cli/cli-reference)
           - **Upstream Install Script**: `https://app.factory.ai/cli`
           - **Upstream Binary Base**: `https://downloads.factory.ai/factory-cli/releases/`
@@ -230,7 +230,7 @@ jobs:
           - **Zero-Waste Titling**: Neutralizes automatic background Claude Haiku 4.5 LLM titling calls on every prompt.
           - **Single Lean Binary**: Package contains only one binary compiled/chosen for the target CPU architecture.
           - **Universal Support**: Handles AVX2-optimized x86_64, non-AVX2 baseline x86_64, aarch64, and macOS.
-          - **Official Factory Changelog**: [Factory Release Notes](https://docs.factory.ai/changelog)
+          - **Official Factory Changelog**: [Factory Release Notes](https://docs.factory.ai/changelog/release-notes)
 
           ### Installation
 

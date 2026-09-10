@@ -117,7 +117,9 @@ python3 tests/simulate_breakage.py
 
 # Run linters locally
 flake8 --max-line-length=120 --extend-ignore=E203 patch-droid.py scripts/ tests/
-shellcheck scripts/*.sh factory-ai-droid-cli-rnoz-bin.install
+shellcheck scripts/*.sh
+shellcheck -s bash factory-ai-droid-cli-rnoz-bin.install
+shellcheck -s bash -e SC2034,SC2154,SC2164 PKGBUILD
 shfmt -i 2 -ci -d scripts/ factory-ai-droid-cli-rnoz-bin.install
 aurscan --rules-only .
 ```
@@ -130,5 +132,5 @@ aurscan --rules-only .
 - **Fail-Safe Gate**: `patch-droid.py` verifies contextual byte-string markers (`formatTitle`, `firstUserText`, `isSessionTitleManuallySet`) and runs an automated smoke test before accepting any binary.
 - **CI Test Matrix**: Releases are gated on offline synthetic test fixtures and multi-version matrix tests (`tests/test_versions.py`) across both `x64` and `x64-baseline` binary streams across 7 versions, package installation via `pacman -U`, and binary smoke checks inside an official `archlinux:base-devel` container.
 - **aurscan Security Guard**: Integrated in CI with pinned binary (`v0.9.0`) and pinned SHA-256 hash to audit package scripts against malicious patterns.
-- **Self-Healing & Breakage Alerts**: Network downloads implement exponential backoff retries. If an upstream update modifies minification patterns, CI automatically files a clean GitHub breakage issue with target version, failure logs, and links to the [Official Factory Changelog](https://docs.factory.ai/changelog).
+- **Self-Healing & Breakage Alerts**: Network downloads implement exponential backoff retries. If an upstream update modifies minification patterns, CI automatically files a clean GitHub breakage issue with target version, failure logs, and links to the [Official Factory Changelog](https://docs.factory.ai/changelog/release-notes).
 - **Pure Standard Library**: Zero external Python dependencies required (`python >= 3.8`).
