@@ -37,7 +37,7 @@
 | Cycle AI model | `Ctrl-N` | `Ctrl-P` |
 | Pull queued message | `Ctrl-G` | `Ctrl-Q` |
 
-Applied in place by `patches/patch_keybindings.py` at identical byte length; any unknown or partially patched layout aborts the patch.
+Applied in place by `patches/patch_keybindings.py` at identical byte length; any unknown or partially patched layout aborts the patch. Interactive `makepkg` asks before each patch (default `[Y]`); non-interactive builds apply both.
 
 ---
 
@@ -49,9 +49,9 @@ Applied in place by `patches/patch_keybindings.py` at identical byte length; any
 | **Arch Linux** | `x86_64` (No AVX2 / VM) | `linux/x64-baseline/droid` | Installs baseline single binary (zero `SIGILL`) | **Verified** (CI & Arch container) |
 | **Arch Linux** | `aarch64` | `linux/arm64/droid` | Installs native ARM64 single binary | Build verified |
 | **macOS** | Apple Silicon (`arm64`) | Official Homebrew / `droid update` | In-place patch with collision-resistant backup | **Verified directly on macOS** |
-| **macOS** | Intel (`x86_64`) | Official Homebrew / curl | In-place patch with collision-resistant backup | *Untested / Experimental* |
+| **macOS** | Intel (`x86_64`) | Official Homebrew / `droid update` | In-place patch with collision-resistant backup | *Not verified* |
 
-> **Testing Scope**: Arch Linux packaging, AVX2 execution, non-AVX2 baseline fallback, and byte-exact patch replacement are 100% automated, tested, and smoke-tested in CI using official Arch Linux containers. The macOS companion helper (`scripts/patch-macos.sh`) is provided as an experimental helper and has not yet been tested on macOS.
+> **Testing Scope**: Arch Linux packaging, AVX2 execution, non-AVX2 baseline fallback, and byte-exact patch replacement are automated in CI. Apple Silicon macOS patching has also been verified directly after `droid update`; Intel macOS remains unverified.
 
 *Note: Maintainers and automated builders can explicitly force a variant via `DROID_ARCH_VARIANT=baseline` or `DROID_ARCH_VARIANT=avx2` when invoking `makepkg`.*
 
@@ -77,9 +77,9 @@ makepkg -si
 
 *Provides and conflicts with `droid`, `factory-cli`, and `factory-cli-bin`.*
 
-### macOS (Experimental)
+### macOS
 
-> *Testing has focused on Arch Linux. The macOS patcher is provided as an untested helper script.*
+After each `droid update`, rerun the patcher because the updater replaces the binary:
 
 Run the standalone patcher against an existing Factory CLI installation:
 
@@ -99,7 +99,7 @@ cd factory-ai-droid-cli-rnoz
 ├── PKGBUILD                              # Arch Linux package specification (hardware-optimal)
 ├── .SRCINFO                              # Generated AUR package metadata
 ├── patches/
-│   ├── patch-title.py                    # Core context-bounded byte-exact patch engine
+│   ├── patch_title.py                    # Core context-bounded byte-exact patch engine
 │   └── patch_keybindings.py              # Isolated fail-closed keymap rotation
 ├── docs/images/factory-keybindings-remap.png # Documentation only; never packaged
 ├── factory-ai-droid-cli-rnoz-bin.install # Pacman post-install notice
@@ -116,48 +116,7 @@ cd factory-ai-droid-cli-rnoz
 
 ---
 
-## Verification & Testing
+## Verification and engineering
 
-```bash
-# Verify CLI runs cleanly
-droid --version
-
-# Inspect patch state directly
-python3 patches/patch-title.py /usr/lib/factory/droid --check
-# Status: patched
-
-# Run offline synthetic tests
-python3 tests/test_versions.py --offline
-python3 tests/test_keybindings.py
-
-# Run multi-version test suite across both AVX2 and baseline streams
-python3 tests/test_versions.py --latest
-
-# Run failure and recovery simulations
-python3 tests/simulate_breakage.py
-
-# Create a disposable local binary for interactive evaluation
-cp /usr/lib/factory/droid /tmp/droid-keybindings
-python3 patches/patch_keybindings.py /tmp/droid-keybindings --test
-/tmp/droid-keybindings
-
-# Run linters locally
-flake8 --max-line-length=120 --extend-ignore=E203 patches/ scripts/ tests/
-shellcheck scripts/*.sh
-shellcheck -s bash factory-ai-droid-cli-rnoz-bin.install
-shellcheck -s bash -e SC2034,SC2154,SC2164 PKGBUILD
-shfmt -i 2 -ci -d scripts/ factory-ai-droid-cli-rnoz-bin.install
-aurscan --rules-only .
-```
-
----
-
-## Engineering & Safety
-
-- **Byte-Exact Patching**: Replaces the internal titling guard with space-padded JS comments (`if(true)return null;/* ... */`), preserving 100% byte offset equivalence to guarantee no V8 snapshot or symbol alignment breakage.
-- **Keybinding Rotation**: Locates the serialized keymap, the guarded runtime dispatch statements, and the model registry, infers minified action names, then rotates editor → `Ctrl-G`, model cycling → `Ctrl-P`, and queued-message pull → `Ctrl-Q`. Optional-callback availability guards travel with their action, and human chord hints rotate with them, while machine kebab keys remain untouched. Unique signatures, equal-length action identifiers, adjacent dispatch statements, and an exact already-patched layout are required; anything else fails closed.
-- **Fail-Safe Gate**: `patches/patch-title.py` verifies contextual byte-string markers (`formatTitle`, `firstUserText`, `isSessionTitleManuallySet`) and runs an automated smoke test before accepting any binary.
-- **CI Test Matrix**: Releases are gated on offline synthetic fixtures and multi-version tests (`tests/test_versions.py --latest`) across both `x64` and `x64-baseline` streams, including the latest upstream release fetched from Factory and binary smoke checks inside an official `archlinux:base-devel` container.
-- **aurscan Security Guard**: Integrated in CI with pinned binary (`v0.9.0`) and pinned SHA-256 hash to audit package scripts against malicious patterns.
-- **Self-Healing & Breakage Alerts**: Network downloads implement exponential backoff retries. If an upstream update modifies minification patterns, CI automatically files a clean GitHub breakage issue with target version, failure logs, and links to the [Official Factory Changelog](https://docs.factory.ai/changelog/release-notes).
-- **Pure Standard Library**: Zero external Python dependencies required (`python >= 3.10`).
+See [Verification and testing](docs/verification.md) and
+[Engineering and safety](docs/engineering.md).
