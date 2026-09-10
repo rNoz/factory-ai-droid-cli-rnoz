@@ -1,7 +1,7 @@
 # Maintainer: rNoz <8237539+rNoz@users.noreply.github.com>
 pkgname=factory-ai-droid-cli-rnoz-bin
 pkgver=0.216.0
-pkgrel=2
+pkgrel=1
 pkgdesc="Factory.ai Droid CLI with zero-waste titling and cross-harness keybindings"
 arch=('x86_64' 'aarch64')
 url="https://github.com/rNoz/factory-ai-droid-cli-rnoz"
