@@ -12,6 +12,7 @@ droid
 rg
 *.sha256
 *.tmp_patch
+*.tmp_keybindings
 
 # Python cache
 __pycache__/

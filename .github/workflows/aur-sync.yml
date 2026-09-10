@@ -61,9 +61,9 @@ jobs:
       - name: Run static linters and format checks
         run: |
           echo "==> Validating Python syntax & bytecode..."
-          python3 -m py_compile patch-droid.py scripts/*.py tests/*.py
+          python3 -m py_compile patches/*.py scripts/*.py tests/*.py
           echo "==> Running flake8 Python linter..."
-          flake8 --max-line-length=120 --extend-ignore=E203 patch-droid.py scripts/ tests/
+          flake8 --max-line-length=120 --extend-ignore=E203 patches/ scripts/ tests/
           echo "==> Running shellcheck on shell scripts & PKGBUILD..."
           shellcheck scripts/patch-macos.sh scripts/build-in-container.sh
           shellcheck -s bash factory-ai-droid-cli-rnoz-bin.install
@@ -84,6 +84,8 @@ jobs:
         run: |
           echo "==> Running offline synthetic patcher fixtures..."
           python3 tests/test_versions.py --offline
+          echo "==> Running keybinding rotation fixture tests..."
+          python3 tests/test_keybindings.py
           echo "==> Running breakage & recovery simulation suite..."
           python3 tests/simulate_breakage.py
 
@@ -112,7 +114,7 @@ jobs:
       - name: Run multi-version patcher validation
         if: steps.check_version.outputs.should_build == 'true'
         run: |
-          python3 tests/test_versions.py
+          python3 tests/test_versions.py --latest
 
       - name: Build and smoke test package in Arch Linux container
         if: steps.check_version.outputs.should_build == 'true'
@@ -282,7 +284,7 @@ jobs:
           '
 
           tar -czf "factory-ai-droid-cli-rnoz-bin-${UPSTREAM_VER}.src.tar.gz" \
-            PKGBUILD .SRCINFO patch-droid.py factory-ai-droid-cli-rnoz-bin.install
+            PKGBUILD .SRCINFO patches/patch-droid.py patches/patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
 
           if gh release view "v${UPSTREAM_VER}" >/dev/null 2>&1; then
             echo "==> Release v${UPSTREAM_VER} already exists. Updating release notes and source snapshot..."
@@ -318,7 +320,9 @@ jobs:
           
           export GIT_SSH_COMMAND="ssh -i $KEY_FILE -o StrictHostKeyChecking=yes"
           git clone "ssh://aur@aur.archlinux.org/${AUR_PKG_NAME}.git" /tmp/aur-repo
-          cp PKGBUILD .SRCINFO patch-droid.py factory-ai-droid-cli-rnoz-bin.install /tmp/aur-repo/
+          cp PKGBUILD .SRCINFO factory-ai-droid-cli-rnoz-bin.install /tmp/aur-repo/
+          mkdir -p /tmp/aur-repo/patches
+          cp patches/*.py /tmp/aur-repo/patches/
           if [ -f SRCINFO ]; then
             cp -f SRCINFO /tmp/aur-repo/.SRCINFO
           fi
@@ -326,7 +330,7 @@ jobs:
           git config user.name "$AUR_USERNAME"
           git config user.email "$AUR_EMAIL"
           git checkout -B master
-          git add PKGBUILD .SRCINFO patch-droid.py factory-ai-droid-cli-rnoz-bin.install
+          git add PKGBUILD .SRCINFO patches/patch-droid.py patches/patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
           git commit -m "Update to v${{ needs.build-and-test.outputs.upstream_version }}" || exit 0
           git push origin master
           # Pushing a new pkgver automatically unflags out-of-date state on AUR web

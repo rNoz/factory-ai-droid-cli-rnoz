@@ -8,10 +8,11 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PATCHER="$SCRIPT_DIR/patch-droid.py"
+PATCHER="$SCRIPT_DIR/../patches/patch-droid.py"
+KEYBINDING_PATCHER="$SCRIPT_DIR/../patches/patch_keybindings.py"
 
-if [[ ! -f "$PATCHER" ]]; then
-  echo "Error: patch-droid.py not found in $SCRIPT_DIR" >&2
+if [[ ! -f "$PATCHER" || ! -f "$KEYBINDING_PATCHER" ]]; then
+  echo "Error: patch scripts not found next to $SCRIPT_DIR" >&2
   exit 1
 fi
 
@@ -64,8 +65,11 @@ if [[ ! -s "$BACKUP_BIN" ]]; then
   exit 1
 fi
 
-echo "==> Applying zero-waste titling patch..."
-if python3 "$PATCHER" "$REAL_BIN" --test; then
+echo "==> Applying zero-waste titling and keybinding patches..."
+# Both patchers run as one guarded unit: if either fails, the backup below
+# restores the pre-patch binary (set -e would otherwise abort mid-patch
+# without the restore path).
+if python3 "$PATCHER" "$REAL_BIN" --test && python3 "$KEYBINDING_PATCHER" "$REAL_BIN" --test; then
   echo ""
   echo "==> SUCCESS: Factory CLI patched successfully!"
   echo "    Binary: $REAL_BIN"

@@ -9,7 +9,7 @@
 [![Security: aurscan](https://img.shields.io/badge/security-aurscan%20v0.9.0-34d399?logo=shield&logoColor=white)](https://github.com/manticore-projects/aurscan)
 [![License](https://img.shields.io/badge/license-Apache--2.0%20%2F%20Proprietary-blue.svg)](LICENSE)
 [![Arch](https://img.shields.io/badge/arch-x86__64%20%7C%20aarch64%20%7C%20macOS-informational)]()
-[![Python](https://img.shields.io/badge/python-3.8%2B-blue?logo=python&logoColor=white)](https://python.org)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)](https://python.org)
 [![Upstream Tests](https://img.shields.io/badge/tested%20releases-7%20(100%25%20PASS)-brightgreen)]()
 
 </div>
@@ -19,10 +19,25 @@
 ## Why this exists
 
 1. **Zero Titling Token Waste**: Factory CLI by default fires an unconfigurable background LLM call (Claude Haiku 4.5) on the first prompt of every interactive session, consuming an estimated ~300–500 input and ~10–25 output credits per conversation. This package enforces instant, local deterministic titling—saving API credits and eliminating initial latency while keeping terminal tab titles and session history logs intact.
-2. **Hardware-Optimal Lean Binary**: Unlike generic packages that either force AVX2 (crashing older/virtualized CPUs with `SIGILL`) or ship bloated multi-binary bundles, `factory-ai-droid-cli-rnoz-bin` inspects the host CPU at build/package time and installs **only one single binary** (`/usr/lib/factory/droid`). Modern CPUs receive the AVX2-optimized build; legacy/VM/sandbox CPUs receive the baseline build. Package footprint is cut in half (~80 MB) with zero runtime wrapper overhead.
-3. **Always Fresh & Autonomous**: Automated CI checks Factory AI upstream releases 3× daily, validates patches against multiple releases in an official Arch Linux container, and publishes updates with zero manual intervention.
-4. **Supply Chain Security & Linters**: Every build is scanned with [aurscan](https://github.com/manticore-projects/aurscan) (`v0.9.0`, SHA-256 pinned) to guarantee clean, non-malicious packaging scripts. Code is strictly validated with `flake8`, `shellcheck`, and `shfmt`.
-5. **Clean & Lean Packaging**: Only bundles what `droid` actually requires. Includes bundled `ripgrep` with optional fallback to system `ripgrep`. Upstream binaries are fetched dynamically during installation and validated with fail-closed SHA-256 checks.
+2. **Muscle-Memory Keybindings**: The interactive keymap rotates editor, model-cycle, and queued-message shortcuts to `Ctrl-G`, `Ctrl-P`, and `Ctrl-N`, respectively. The patch refuses unknown or conflicting upstream layouts (see [Muscle-Memory Keybindings](#muscle-memory-keybindings)).
+3. **Hardware-Optimal Lean Binary**: Unlike generic packages that either force AVX2 (crashing older/virtualized CPUs with `SIGILL`) or ship bloated multi-binary bundles, `factory-ai-droid-cli-rnoz-bin` inspects the host CPU at build/package time and installs **only one single binary** (`/usr/lib/factory/droid`). Modern CPUs receive the AVX2-optimized build; legacy/VM/sandbox CPUs receive the baseline build. Package footprint is cut in half (~80 MB) with zero runtime wrapper overhead.
+4. **Always Fresh & Autonomous**: Automated CI checks Factory AI upstream releases 3× daily, validates patches against multiple releases in an official Arch Linux container, and publishes updates with zero manual intervention.
+5. **Supply Chain Security & Linters**: Every build is scanned with [aurscan](https://github.com/manticore-projects/aurscan) (`v0.9.0`, SHA-256 pinned) to guarantee clean, non-malicious packaging scripts. Code is strictly validated with `flake8`, `shellcheck`, and `shfmt`.
+6. **Clean & Lean Packaging**: Only bundles what `droid` actually requires. Includes bundled `ripgrep` with optional fallback to system `ripgrep`. Upstream binaries are fetched dynamically during installation and validated with fail-closed SHA-256 checks.
+
+---
+
+## Muscle-Memory Keybindings
+
+![Factory CLI keybinding remap: editor moves from Ctrl-P to Ctrl-G, model cycle from Ctrl-N to Ctrl-P, queued-message pull from Ctrl-G to Ctrl-N](docs/images/factory-keybindings-remap.png)
+
+| Action | Upstream | This package |
+| :-- | :-- | :-- |
+| Open input in editor | `Ctrl-P` | `Ctrl-G` |
+| Cycle AI model | `Ctrl-N` | `Ctrl-P` |
+| Pull queued message | `Ctrl-G` | `Ctrl-N` |
+
+Applied in place by `patches/patch_keybindings.py` at identical byte length; any unknown or partially patched layout aborts the patch.
 
 ---
 
@@ -83,7 +98,10 @@ cd factory-ai-droid-cli-rnoz
 ```text
 ├── PKGBUILD                              # Arch Linux package specification (hardware-optimal)
 ├── .SRCINFO                              # Generated AUR package metadata
-├── patch-droid.py                        # Core context-bounded byte-exact patch engine
+├── patches/
+│   ├── patch-droid.py                    # Core context-bounded byte-exact patch engine
+│   └── patch_keybindings.py              # Isolated fail-closed keymap rotation
+├── docs/images/factory-keybindings-remap.png # Documentation only; never packaged
 ├── factory-ai-droid-cli-rnoz-bin.install # Pacman post-install notice
 ├── LICENSE                               # Apache-2.0 License
 ├── scripts/
@@ -91,7 +109,8 @@ cd factory-ai-droid-cli-rnoz
 │   ├── build-in-container.sh             # Isolated Arch Linux container build script
 │   └── fetch-changelog.py                # Upstream release notes scraper
 └── tests/
-    ├── test_versions.py                  # Multi-version matrix (AVX2 + baseline) & fixtures
+    ├── test_versions.py                  # Fetch/retest title and keybinding patches across releases
+    ├── test_keybindings.py               # Offline keymap rotation and help-text fixtures
     └── simulate_breakage.py              # Fail-closed breakage simulation suite
 ```
 
@@ -104,20 +123,26 @@ cd factory-ai-droid-cli-rnoz
 droid --version
 
 # Inspect patch state directly
-python3 patch-droid.py /usr/lib/factory/droid --check
+python3 patches/patch-droid.py /usr/lib/factory/droid --check
 # Status: patched
 
 # Run offline synthetic tests
 python3 tests/test_versions.py --offline
+python3 tests/test_keybindings.py
 
 # Run multi-version test suite across both AVX2 and baseline streams
-python3 tests/test_versions.py
+python3 tests/test_versions.py --latest
 
 # Run failure and recovery simulations
 python3 tests/simulate_breakage.py
 
+# Create a disposable local binary for interactive evaluation
+cp /usr/lib/factory/droid /tmp/droid-keybindings
+python3 patches/patch_keybindings.py /tmp/droid-keybindings --test
+/tmp/droid-keybindings
+
 # Run linters locally
-flake8 --max-line-length=120 --extend-ignore=E203 patch-droid.py scripts/ tests/
+flake8 --max-line-length=120 --extend-ignore=E203 patches/ scripts/ tests/
 shellcheck scripts/*.sh
 shellcheck -s bash factory-ai-droid-cli-rnoz-bin.install
 shellcheck -s bash -e SC2034,SC2154,SC2164 PKGBUILD
@@ -130,8 +155,9 @@ aurscan --rules-only .
 ## Engineering & Safety
 
 - **Byte-Exact Patching**: Replaces the internal titling guard with space-padded JS comments (`if(true)return null;/* ... */`), preserving 100% byte offset equivalence to guarantee no V8 snapshot or symbol alignment breakage.
-- **Fail-Safe Gate**: `patch-droid.py` verifies contextual byte-string markers (`formatTitle`, `firstUserText`, `isSessionTitleManuallySet`) and runs an automated smoke test before accepting any binary.
-- **CI Test Matrix**: Releases are gated on offline synthetic test fixtures and multi-version matrix tests (`tests/test_versions.py`) across both `x64` and `x64-baseline` binary streams across 7 versions, package installation via `pacman -U`, and binary smoke checks inside an official `archlinux:base-devel` container.
+- **Keybinding Rotation**: Locates the serialized keymap, the guarded runtime dispatch statements, and the model registry, infers minified action names, then rotates editor → `Ctrl-G`, model cycling → `Ctrl-P`, and queued-message pull → `Ctrl-N`. Optional-callback availability guards travel with their action, and human chord hints (`Ctrl + P`, `Ctrl+P`, `Ctrl-P`, `ctrl+N`, plus `G`/`N` variants in every bundled locale) rotate with them, while machine kebab keys (`ctrl-g` in the key-name registry) are never touched. Unique signatures, equal-length action identifiers, adjacent dispatch statements, and an exact already-patched layout are required; anything else fails closed.
+- **Fail-Safe Gate**: `patches/patch-droid.py` verifies contextual byte-string markers (`formatTitle`, `firstUserText`, `isSessionTitleManuallySet`) and runs an automated smoke test before accepting any binary.
+- **CI Test Matrix**: Releases are gated on offline synthetic fixtures and multi-version tests (`tests/test_versions.py --latest`) across both `x64` and `x64-baseline` streams, including the latest upstream release fetched from Factory and binary smoke checks inside an official `archlinux:base-devel` container.
 - **aurscan Security Guard**: Integrated in CI with pinned binary (`v0.9.0`) and pinned SHA-256 hash to audit package scripts against malicious patterns.
 - **Self-Healing & Breakage Alerts**: Network downloads implement exponential backoff retries. If an upstream update modifies minification patterns, CI automatically files a clean GitHub breakage issue with target version, failure logs, and links to the [Official Factory Changelog](https://docs.factory.ai/changelog/release-notes).
-- **Pure Standard Library**: Zero external Python dependencies required (`python >= 3.8`).
+- **Pure Standard Library**: Zero external Python dependencies required (`python >= 3.10`).
