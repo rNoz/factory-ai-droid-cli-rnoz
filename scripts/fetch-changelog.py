@@ -32,14 +32,18 @@ def fetch_changelog(version: str) -> str:
                 )
 
         # 3. Handle upstream docs changelog lagging behind binary releases
-        latest_match = re.search(r"## CLI v([0-9]+\.[0-9]+\.[0-9]+)[^\n]*\n", content)
+        latest_match = re.search(r"(## CLI v([0-9]+\.[0-9]+\.[0-9]+)[^\n]*\n.*?\n)(?=\n## |\Z)", content, re.DOTALL)
         if latest_match:
-            latest_doc_ver = latest_match.group(1)
+            latest_block = latest_match.group(1).strip()
+            latest_doc_ver = latest_match.group(2)
             msg = (
-                f"> **Notice**: Upstream binary release `v{version}` has been published to `app.factory.ai/cli`,\n"
-                f"> but official documentation notes currently lag behind (latest entry: `v{latest_doc_ver}`).\n\n"
-                f"Refer to the [Official Factory Release Notes](https://docs.factory.ai/changelog/release-notes)\n"
-                f"([Raw Markdown](https://docs.factory.ai/changelog/release-notes.md)) for doc updates."
+                f"> **Notice**: Upstream binary release `v{version}` was published via `app.factory.ai/cli`,\n"
+                f"> but written documentation notes lag behind (latest documented: `v{latest_doc_ver}`).\n"
+                f"> The latest published notes from Factory AI are included below for reference:\n\n"
+                f"{latest_block}\n\n"
+                f"---\n"
+                f"> Refer to the [Official Factory Release Notes](https://docs.factory.ai/changelog/release-notes)\n"
+                f"> ([Raw Markdown](https://docs.factory.ai/changelog/release-notes.md)) for ongoing updates."
             )
             return msg
 

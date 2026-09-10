@@ -206,11 +206,6 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Download build artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: package-artifacts-${{ needs.build-and-test.outputs.upstream_version }}
-
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -230,7 +225,8 @@ jobs:
           - **Zero-Waste Titling**: Neutralizes automatic background Claude Haiku 4.5 LLM titling calls on every prompt.
           - **Single Lean Binary**: Package contains only one binary compiled/chosen for the target CPU architecture.
           - **Universal Support**: Handles AVX2-optimized x86_64, non-AVX2 baseline x86_64, aarch64, and macOS.
-          - **Official Factory Changelog**: [Factory Release Notes](https://docs.factory.ai/changelog/release-notes)
+          - **Official Factory Changelog**: [Factory Release Notes](https://docs.factory.ai/changelog/release-notes) ([Raw Markdown](https://docs.factory.ai/changelog/release-notes.md))
+          - **Clean Source Snapshot**: Distributes packaging scripts only (PKGBUILD, .SRCINFO, patcher). Upstream binaries are pulled directly from Factory servers by makepkg.
 
           ### Installation
 
@@ -257,7 +253,10 @@ jobs:
               f.write(content)
           '
 
-          gh release create "v${UPSTREAM_VER}" *.pkg.tar.zst \
+          tar -czf "factory-ai-droid-cli-rnoz-bin-${UPSTREAM_VER}.src.tar.gz" \
+            PKGBUILD .SRCINFO patch-droid.py factory-ai-droid-cli-rnoz-bin.install
+
+          gh release create "v${UPSTREAM_VER}" "factory-ai-droid-cli-rnoz-bin-${UPSTREAM_VER}.src.tar.gz" \
             --title "Factory CLI v${UPSTREAM_VER} (Patched)" \
             --notes-file /tmp/release-notes.md \
             --target main
