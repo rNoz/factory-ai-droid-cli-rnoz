@@ -123,13 +123,12 @@ jobs:
             archlinux:base-devel \
             /github/workspace/scripts/build-in-container.sh "${{ steps.check_version.outputs.upstream_version }}"
 
-      - name: Upload package artifacts
+      - name: Upload packaging metadata
         if: steps.check_version.outputs.should_build == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: package-artifacts-${{ steps.check_version.outputs.upstream_version }}
+          name: package-metadata-${{ steps.check_version.outputs.upstream_version }}
           path: |
-            *.pkg.tar.zst
             PKGBUILD
             .SRCINFO
 
@@ -161,6 +160,9 @@ jobs:
           - **Factory CLI Docs**: [Droid CLI Reference](https://docs.factory.ai/droid-cli/cli-reference)
           - **Upstream Install Script**: `https://app.factory.ai/cli`
           - **Upstream Binary Base**: `https://downloads.factory.ai/factory-cli/releases/`
+
+          ### Maintainer Alert
+          cc @rNoz — Automated build verification failed for upstream release `v${UPSTREAM_VER}`. Package has been flagged out-of-date on AUR. Manual inspection required.
           EOF
             sed -i 's/^          //' /tmp/issue-body.md
             sed -i "s/\${UPSTREAM_VER}/$UPSTREAM_VER/g" /tmp/issue-body.md
@@ -172,6 +174,7 @@ jobs:
             gh issue create --repo "$GITHUB_REPOSITORY" \
               --title "Upstream Build Verification Failure: Factory CLI v${UPSTREAM_VER}" \
               --label "upstream-breakage" \
+              --assignee rNoz \
               --body-file /tmp/issue-body.md || true
           else
             echo "==> Breakage issue #$EXISTING_ISSUE is already open."
@@ -200,6 +203,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      - name: Download packaging metadata
+        uses: actions/download-artifact@v8
+        with:
+          name: package-metadata-${{ needs.build-and-test.outputs.upstream_version }}
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -239,6 +247,9 @@ jobs:
           ```bash
           ./scripts/patch-macos.sh
           ```
+
+          ### Maintainer Notification
+          cc @rNoz — Successfully built, smoke-tested in Arch Linux container, and published to AUR. Ready for system update (`yay -Syu`).
           EOF
           sed -i 's/^          //' /tmp/release-notes.md
           sed -i "s/\${UPSTREAM_VER}/$UPSTREAM_VER/g" /tmp/release-notes.md
@@ -256,10 +267,16 @@ jobs:
           tar -czf "factory-ai-droid-cli-rnoz-bin-${UPSTREAM_VER}.src.tar.gz" \
             PKGBUILD .SRCINFO patch-droid.py factory-ai-droid-cli-rnoz-bin.install
 
-          gh release create "v${UPSTREAM_VER}" "factory-ai-droid-cli-rnoz-bin-${UPSTREAM_VER}.src.tar.gz" \
-            --title "Factory CLI v${UPSTREAM_VER} (Patched)" \
-            --notes-file /tmp/release-notes.md \
-            --target main
+          if gh release view "v${UPSTREAM_VER}" >/dev/null 2>&1; then
+            echo "==> Release v${UPSTREAM_VER} already exists. Updating release notes and source snapshot..."
+            gh release edit "v${UPSTREAM_VER}" --notes-file /tmp/release-notes.md
+            gh release upload "v${UPSTREAM_VER}" "factory-ai-droid-cli-rnoz-bin-${UPSTREAM_VER}.src.tar.gz" --clobber
+          else
+            gh release create "v${UPSTREAM_VER}" "factory-ai-droid-cli-rnoz-bin-${UPSTREAM_VER}.src.tar.gz" \
+              --title "Factory CLI v${UPSTREAM_VER} (Patched)" \
+              --notes-file /tmp/release-notes.md \
+              --target main
+          fi
 
       - name: Commit updated PKGBUILD and .SRCINFO to repository
         run: |

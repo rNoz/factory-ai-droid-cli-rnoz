@@ -28,13 +28,15 @@
 
 ## Supported Architectures & Platforms
 
-| Platform | Architecture | Upstream Binary Stream | Packaging Behavior |
-| :--- | :--- | :--- | :--- |
-| **Arch Linux** | `x86_64` (AVX2 supported) | `linux/x64/droid` | Installs AVX2-optimized single binary |
-| **Arch Linux** | `x86_64` (No AVX2 / VM) | `linux/x64-baseline/droid` | Installs baseline single binary (zero `SIGILL`) |
-| **Arch Linux** | `aarch64` | `linux/arm64/droid` | Installs native ARM64 single binary |
-| **macOS** | Apple Silicon (`arm64`) | Official Homebrew / curl | In-place patch with collision-resistant backup |
-| **macOS** | Intel (`x86_64`) | Official Homebrew / curl | In-place patch with collision-resistant backup |
+| Platform | Architecture | Upstream Binary Stream | Packaging Behavior | Testing Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **Arch Linux** | `x86_64` (AVX2 supported) | `linux/x64/droid` | Installs AVX2-optimized single binary | **Verified** (CI & Arch container) |
+| **Arch Linux** | `x86_64` (No AVX2 / VM) | `linux/x64-baseline/droid` | Installs baseline single binary (zero `SIGILL`) | **Verified** (CI & Arch container) |
+| **Arch Linux** | `aarch64` | `linux/arm64/droid` | Installs native ARM64 single binary | Build verified |
+| **macOS** | Apple Silicon (`arm64`) | Official Homebrew / curl | In-place patch with collision-resistant backup | *Untested / Experimental* |
+| **macOS** | Intel (`x86_64`) | Official Homebrew / curl | In-place patch with collision-resistant backup | *Untested / Experimental* |
+
+> **Testing Scope**: Arch Linux packaging, AVX2 execution, non-AVX2 baseline fallback, and byte-exact patch replacement are 100% automated, tested, and smoke-tested in CI using official Arch Linux containers. The macOS companion helper (`scripts/patch-macos.sh`) is provided as an experimental helper and has not yet been tested on macOS.
 
 *Note: Maintainers and automated builders can explicitly force a variant via `DROID_ARCH_VARIANT=baseline` or `DROID_ARCH_VARIANT=avx2` when invoking `makepkg`.*
 
@@ -60,7 +62,9 @@ makepkg -si
 
 *Provides and conflicts with `droid`, `factory-cli`, and `factory-cli-bin`.*
 
-### macOS
+### macOS (Experimental)
+
+> *Testing has focused on Arch Linux. The macOS patcher is provided as an untested helper script.*
 
 Run the standalone patcher against an existing Factory CLI installation:
 
@@ -70,9 +74,7 @@ cd factory-ai-droid-cli-rnoz
 ./scripts/patch-macos.sh
 ```
 
-*(Or via root symlink `./patch-macos.sh`)*
-
-*Automatically locates `droid`, resolves symlinks, creates collision-resistant backups (`droid.bak-*`), applies byte-safe patches, and validates execution.*
+*Locates `droid`, resolves symlinks, creates collision-resistant backups (`droid.bak-*`), applies byte-safe patches, and validates execution.*
 
 ---
 
@@ -83,7 +85,6 @@ cd factory-ai-droid-cli-rnoz
 ├── .SRCINFO                              # Generated AUR package metadata
 ├── patch-droid.py                        # Core context-bounded byte-exact patch engine
 ├── factory-ai-droid-cli-rnoz-bin.install # Pacman post-install notice
-├── patch-macos.sh -> scripts/            # Root symlink for quick macOS execution
 ├── LICENSE                               # Apache-2.0 License
 ├── scripts/
 │   ├── patch-macos.sh                    # Standalone macOS patcher with backup rotation
