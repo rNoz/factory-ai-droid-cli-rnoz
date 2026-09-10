@@ -128,9 +128,11 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: package-metadata-${{ steps.check_version.outputs.upstream_version }}
+          include-hidden-files: true
           path: |
             PKGBUILD
             .SRCINFO
+            SRCINFO
 
       - name: Report upstream breakage on failure
         if: failure() && github.ref == 'refs/heads/main'
@@ -209,6 +211,12 @@ jobs:
         with:
           name: package-metadata-${{ needs.build-and-test.outputs.upstream_version }}
 
+      - name: Restore metadata dotfiles
+        run: |
+          if [ -f SRCINFO ]; then
+            cp -f SRCINFO .SRCINFO
+          fi
+
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
@@ -219,7 +227,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           UPSTREAM_VER: ${{ needs.build-and-test.outputs.upstream_version }}
         run: |
-          UPSTREAM_NOTES=$(python3 scripts/fetch-changelog.py "$UPSTREAM_VER")
+          python3 scripts/fetch-changelog.py "$UPSTREAM_VER" > /tmp/upstream-notes.md
 
           cat << 'EOF' > /tmp/release-notes.md
           ## Factory CLI v${UPSTREAM_VER} (Zero-Waste Patched)
@@ -255,8 +263,8 @@ jobs:
           sed -i "s/\${UPSTREAM_VER}/$UPSTREAM_VER/g" /tmp/release-notes.md
           # Insert upstream notes safely
           python3 -c '
-          import os
-          notes = os.environ.get("UPSTREAM_NOTES", "")
+          with open("/tmp/upstream-notes.md", "r") as f:
+              notes = f.read()
           with open("/tmp/release-notes.md", "r") as f:
               content = f.read()
           content = content.replace("__UPSTREAM_NOTES__", notes)
@@ -310,6 +318,9 @@ jobs:
           export GIT_SSH_COMMAND="ssh -i $KEY_FILE -o StrictHostKeyChecking=yes"
           git clone "ssh://aur@aur.archlinux.org/${AUR_PKG_NAME}.git" /tmp/aur-repo
           cp PKGBUILD .SRCINFO patch-droid.py factory-ai-droid-cli-rnoz-bin.install /tmp/aur-repo/
+          if [ -f SRCINFO ]; then
+            cp -f SRCINFO /tmp/aur-repo/.SRCINFO
+          fi
           cd /tmp/aur-repo
           git config user.name "$AUR_USERNAME"
           git config user.email "$AUR_EMAIL"

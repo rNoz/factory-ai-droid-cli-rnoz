@@ -31,5 +31,6 @@ python3 patch-droid.py /usr/lib/factory/droid --check
 
 echo "==> Copying built package back to workspace..."
 cp factory-ai-droid-cli-rnoz-bin-*.pkg.tar.zst PKGBUILD .SRCINFO /github/workspace/
-chmod 644 /github/workspace/factory-ai-droid-cli-rnoz-bin-*.pkg.tar.zst /github/workspace/PKGBUILD /github/workspace/.SRCINFO
+cp .SRCINFO /github/workspace/SRCINFO
+chmod 644 /github/workspace/factory-ai-droid-cli-rnoz-bin-*.pkg.tar.zst /github/workspace/PKGBUILD /github/workspace/.SRCINFO /github/workspace/SRCINFO
 echo "==> Arch Linux container build and smoke test completed successfully!"

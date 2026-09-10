@@ -4,8 +4,8 @@
 
 > Always-fresh, automated packaging for [Factory CLI](https://app.factory.ai) (`droid`) featuring zero-waste deterministic session titling, hardware-optimal lean packaging, and supply-chain security auditing.
 
-[![CI Build & Security](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml/badge.svg)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml)
-[![AUR version](https://img.shields.io/aur/version/factory-ai-droid-cli-rnoz-bin?logo=archlinux&color=1793d1)](https://aur.archlinux.org/packages/factory-ai-droid-cli-rnoz-bin)
+[![CI Build & Security](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml/badge.svg?branch=main)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml)
+[![AUR version](https://img.shields.io/aur/version/factory-ai-droid-cli-rnoz-bin?logo=archlinux)](https://aur.archlinux.org/packages/factory-ai-droid-cli-rnoz-bin)
 [![Security: aurscan](https://img.shields.io/badge/security-aurscan%20v0.9.0-34d399?logo=shield&logoColor=white)](https://github.com/manticore-projects/aurscan)
 [![License](https://img.shields.io/badge/license-Apache--2.0%20%2F%20Proprietary-blue.svg)](LICENSE)
 [![Arch](https://img.shields.io/badge/arch-x86__64%20%7C%20aarch64%20%7C%20macOS-informational)]()
