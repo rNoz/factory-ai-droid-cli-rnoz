@@ -323,6 +323,7 @@ jobs:
           cp PKGBUILD .SRCINFO patch_title.py patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install /tmp/aur-repo/
           git -C /tmp/aur-repo rm --ignore-unmatch -f patch-droid.py
           git -C /tmp/aur-repo rm --ignore-unmatch -f patch-title.py
+          git -C /tmp/aur-repo rm --ignore-unmatch -r -f patches
           if [ -f SRCINFO ]; then
             cp -f SRCINFO /tmp/aur-repo/.SRCINFO
           fi
