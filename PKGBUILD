@@ -17,8 +17,8 @@ options=('!strip')
 install=factory-ai-droid-cli-rnoz-bin.install
 
 source=(
-  "patches/patch-droid.py"
-  "patches/patch_keybindings.py"
+  "patch-droid.py"
+  "patch_keybindings.py"
   "$install"
 )
 sha256sums=(
@@ -95,8 +95,8 @@ package() {
     cp -f "$raw_file" "$output_bin"
     chmod +x "$output_bin"
 
-    python3 "$srcdir/patches/patch-droid.py" "$output_bin" --test
-    python3 "$srcdir/patches/patch_keybindings.py" "$output_bin" --test
+    python3 "$srcdir/patch-droid.py" "$output_bin" --test
+    python3 "$srcdir/patch_keybindings.py" "$output_bin" --test
   }
 
   if [[ "$architecture" == "x64" ]]; then
