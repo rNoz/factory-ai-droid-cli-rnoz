@@ -19,7 +19,7 @@
 ## Why this exists
 
 1. **Zero Titling Token Waste**: Factory CLI by default fires an unconfigurable background LLM call (Claude Haiku 4.5) on the first prompt of every interactive session, consuming an estimated ~300–500 input and ~10–25 output credits per conversation. This package enforces instant, local deterministic titling—saving API credits and eliminating initial latency while keeping terminal tab titles and session history logs intact.
-2. **Muscle-Memory Keybindings**: The interactive keymap rotates editor, model-cycle, and queued-message shortcuts to `Ctrl-G`, `Ctrl-P`, and `Ctrl-N`, respectively. The patch refuses unknown or conflicting upstream layouts (see [Muscle-Memory Keybindings](#muscle-memory-keybindings)).
+2. **Muscle-Memory Keybindings**: The interactive keymap rotates editor, model-cycle, and queued-message shortcuts to `Ctrl-G`, `Ctrl-P`, and `Ctrl-Q`, respectively. The patch refuses unknown or conflicting upstream layouts (see [Muscle-Memory Keybindings](#muscle-memory-keybindings)).
 3. **Hardware-Optimal Lean Binary**: Unlike generic packages that either force AVX2 (crashing older/virtualized CPUs with `SIGILL`) or ship bloated multi-binary bundles, `factory-ai-droid-cli-rnoz-bin` inspects the host CPU at build/package time and installs **only one single binary** (`/usr/lib/factory/droid`). Modern CPUs receive the AVX2-optimized build; legacy/VM/sandbox CPUs receive the baseline build. Package footprint is cut in half (~80 MB) with zero runtime wrapper overhead.
 4. **Always Fresh & Autonomous**: Automated CI checks Factory AI upstream releases 3× daily, validates patches against multiple releases in an official Arch Linux container, and publishes updates with zero manual intervention.
 5. **Supply Chain Security & Linters**: Every build is scanned with [aurscan](https://github.com/manticore-projects/aurscan) (`v0.9.0`, SHA-256 pinned) to guarantee clean, non-malicious packaging scripts. Code is strictly validated with `flake8`, `shellcheck`, and `shfmt`.
@@ -29,13 +29,13 @@
 
 ## Muscle-Memory Keybindings
 
-![Factory CLI keybinding remap: editor moves from Ctrl-P to Ctrl-G, model cycle from Ctrl-N to Ctrl-P, queued-message pull from Ctrl-G to Ctrl-N](docs/images/factory-keybindings-remap.png)
+![Factory CLI keybinding remap: editor moves from Ctrl-P to Ctrl-G, model cycle from Ctrl-N to Ctrl-P, queued-message pull from Ctrl-G to Ctrl-Q](docs/images/factory-keybindings-remap.png)
 
 | Action | Upstream | This package |
 | :-- | :-- | :-- |
 | Open input in editor | `Ctrl-P` | `Ctrl-G` |
 | Cycle AI model | `Ctrl-N` | `Ctrl-P` |
-| Pull queued message | `Ctrl-G` | `Ctrl-N` |
+| Pull queued message | `Ctrl-G` | `Ctrl-Q` |
 
 Applied in place by `patches/patch_keybindings.py` at identical byte length; any unknown or partially patched layout aborts the patch.
 
@@ -48,7 +48,7 @@ Applied in place by `patches/patch_keybindings.py` at identical byte length; any
 | **Arch Linux** | `x86_64` (AVX2 supported) | `linux/x64/droid` | Installs AVX2-optimized single binary | **Verified** (CI & Arch container) |
 | **Arch Linux** | `x86_64` (No AVX2 / VM) | `linux/x64-baseline/droid` | Installs baseline single binary (zero `SIGILL`) | **Verified** (CI & Arch container) |
 | **Arch Linux** | `aarch64` | `linux/arm64/droid` | Installs native ARM64 single binary | Build verified |
-| **macOS** | Apple Silicon (`arm64`) | Official Homebrew / curl | In-place patch with collision-resistant backup | *Untested / Experimental* |
+| **macOS** | Apple Silicon (`arm64`) | Official Homebrew / `droid update` | In-place patch with collision-resistant backup | **Verified directly on macOS** |
 | **macOS** | Intel (`x86_64`) | Official Homebrew / curl | In-place patch with collision-resistant backup | *Untested / Experimental* |
 
 > **Testing Scope**: Arch Linux packaging, AVX2 execution, non-AVX2 baseline fallback, and byte-exact patch replacement are 100% automated, tested, and smoke-tested in CI using official Arch Linux containers. The macOS companion helper (`scripts/patch-macos.sh`) is provided as an experimental helper and has not yet been tested on macOS.
@@ -99,7 +99,7 @@ cd factory-ai-droid-cli-rnoz
 ├── PKGBUILD                              # Arch Linux package specification (hardware-optimal)
 ├── .SRCINFO                              # Generated AUR package metadata
 ├── patches/
-│   ├── patch-droid.py                    # Core context-bounded byte-exact patch engine
+│   ├── patch-title.py                    # Core context-bounded byte-exact patch engine
 │   └── patch_keybindings.py              # Isolated fail-closed keymap rotation
 ├── docs/images/factory-keybindings-remap.png # Documentation only; never packaged
 ├── factory-ai-droid-cli-rnoz-bin.install # Pacman post-install notice
@@ -123,7 +123,7 @@ cd factory-ai-droid-cli-rnoz
 droid --version
 
 # Inspect patch state directly
-python3 patches/patch-droid.py /usr/lib/factory/droid --check
+python3 patches/patch-title.py /usr/lib/factory/droid --check
 # Status: patched
 
 # Run offline synthetic tests
@@ -155,8 +155,8 @@ aurscan --rules-only .
 ## Engineering & Safety
 
 - **Byte-Exact Patching**: Replaces the internal titling guard with space-padded JS comments (`if(true)return null;/* ... */`), preserving 100% byte offset equivalence to guarantee no V8 snapshot or symbol alignment breakage.
-- **Keybinding Rotation**: Locates the serialized keymap, the guarded runtime dispatch statements, and the model registry, infers minified action names, then rotates editor → `Ctrl-G`, model cycling → `Ctrl-P`, and queued-message pull → `Ctrl-N`. Optional-callback availability guards travel with their action, and human chord hints (`Ctrl + P`, `Ctrl+P`, `Ctrl-P`, `ctrl+N`, plus `G`/`N` variants in every bundled locale) rotate with them, while machine kebab keys (`ctrl-g` in the key-name registry) are never touched. Unique signatures, equal-length action identifiers, adjacent dispatch statements, and an exact already-patched layout are required; anything else fails closed.
-- **Fail-Safe Gate**: `patches/patch-droid.py` verifies contextual byte-string markers (`formatTitle`, `firstUserText`, `isSessionTitleManuallySet`) and runs an automated smoke test before accepting any binary.
+- **Keybinding Rotation**: Locates the serialized keymap, the guarded runtime dispatch statements, and the model registry, infers minified action names, then rotates editor → `Ctrl-G`, model cycling → `Ctrl-P`, and queued-message pull → `Ctrl-Q`. Optional-callback availability guards travel with their action, and human chord hints rotate with them, while machine kebab keys remain untouched. Unique signatures, equal-length action identifiers, adjacent dispatch statements, and an exact already-patched layout are required; anything else fails closed.
+- **Fail-Safe Gate**: `patches/patch-title.py` verifies contextual byte-string markers (`formatTitle`, `firstUserText`, `isSessionTitleManuallySet`) and runs an automated smoke test before accepting any binary.
 - **CI Test Matrix**: Releases are gated on offline synthetic fixtures and multi-version tests (`tests/test_versions.py --latest`) across both `x64` and `x64-baseline` streams, including the latest upstream release fetched from Factory and binary smoke checks inside an official `archlinux:base-devel` container.
 - **aurscan Security Guard**: Integrated in CI with pinned binary (`v0.9.0`) and pinned SHA-256 hash to audit package scripts against malicious patterns.
 - **Self-Healing & Breakage Alerts**: Network downloads implement exponential backoff retries. If an upstream update modifies minification patterns, CI automatically files a clean GitHub breakage issue with target version, failure logs, and links to the [Official Factory Changelog](https://docs.factory.ai/changelog/release-notes).

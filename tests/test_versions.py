@@ -226,15 +226,19 @@ def test_variant(ver: str, arch: str) -> bool:
         print(f"  [FAIL] Keybinding patch is not idempotent for v{ver} ({arch})")
         return False
 
-    # The rotation is a byte-level 3-cycle on human chord styles: old queue
-    # hints (G) move to N, old model hints (N) to P, and old editor hints (P)
+    # The rotation is a byte-level remap on human chord styles: old queue
+    # hints (G) move to Q, old model hints (N) to P, and old editor hints (P)
     # to G, in every style ("Ctrl+P", "Ctrl + P", "ctrl+N", ...).
     for template in (b"Ctrl+%s", b"Ctrl + %s", b"ctrl+%s", b"Ctrl-%s"):
-        before = {letter: keybinding_data.count(template % letter) for letter in (b"G", b"N", b"P")}
-        after = {
-            letter: patched_keybindings.count(template % letter) for letter in (b"G", b"N", b"P")
+        before = {
+            letter: keybinding_data.count(template % letter)
+            for letter in (b"G", b"N", b"P", b"Q")
         }
-        expected = {b"G": before[b"P"], b"N": before[b"G"], b"P": before[b"N"]}
+        after = {
+            letter: patched_keybindings.count(template % letter)
+            for letter in (b"G", b"N", b"P", b"Q")
+        }
+        expected = {b"G": before[b"P"], b"N": 0, b"P": before[b"N"], b"Q": before[b"G"]}
         if after != expected:
             print(f"  [FAIL] Chord display counts did not rotate ({template!r}) for v{ver} ({arch})")
             return False

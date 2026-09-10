@@ -8,7 +8,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PATCHER="$SCRIPT_DIR/../patches/patch-droid.py"
+PATCHER="$SCRIPT_DIR/../patches/patch-title.py"
 KEYBINDING_PATCHER="$SCRIPT_DIR/../patches/patch_keybindings.py"
 
 if [[ ! -f "$PATCHER" || ! -f "$KEYBINDING_PATCHER" ]]; then

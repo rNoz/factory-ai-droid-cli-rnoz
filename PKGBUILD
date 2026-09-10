@@ -17,13 +17,13 @@ options=('!strip')
 install=factory-ai-droid-cli-rnoz-bin.install
 
 source=(
-  "patch-droid.py"
+  "patch-title.py"
   "patch_keybindings.py"
   "$install"
 )
 sha256sums=(
   '6f8fc3992526e8c8b0a4af11f029a633498f7704e9c6a736e772788d18243d00'
-  'de6d3e4750eab0e7df375c2661edc4988312fc45a1f79ad0ec9333818cc66f90'
+  '82a670bc07a21d67ec7e4026905739302cafb1bda893311c3a46e4ccc49fa278'
   'a66b665fef55af8102ea6c84391a410ab9a9aefa1191a4650eae3c53c78bec08'
 )
 
@@ -95,7 +95,7 @@ package() {
     cp -f "$raw_file" "$output_bin"
     chmod +x "$output_bin"
 
-    python3 "$srcdir/patch-droid.py" "$output_bin" --test
+    python3 "$srcdir/patch-title.py" "$output_bin" --test
     python3 "$srcdir/patch_keybindings.py" "$output_bin" --test
   }
 

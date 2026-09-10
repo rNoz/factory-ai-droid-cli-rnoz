@@ -284,7 +284,7 @@ jobs:
           '
 
           tar -czf "factory-ai-droid-cli-rnoz-bin-${UPSTREAM_VER}.src.tar.gz" \
-            PKGBUILD .SRCINFO patch-droid.py patch_keybindings.py patches/patch-droid.py patches/patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
+            PKGBUILD .SRCINFO patch-title.py patch_keybindings.py patches/patch-title.py patches/patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
 
           if gh release view "v${UPSTREAM_VER}" >/dev/null 2>&1; then
             echo "==> Release v${UPSTREAM_VER} already exists. Updating release notes and source snapshot..."
@@ -320,9 +320,8 @@ jobs:
           
           export GIT_SSH_COMMAND="ssh -i $KEY_FILE -o StrictHostKeyChecking=yes"
           git clone "ssh://aur@aur.archlinux.org/${AUR_PKG_NAME}.git" /tmp/aur-repo
-          cp -P PKGBUILD .SRCINFO patch-droid.py patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install /tmp/aur-repo/
-          mkdir -p /tmp/aur-repo/patches
-          cp patches/*.py /tmp/aur-repo/patches/
+          cp PKGBUILD .SRCINFO patch-title.py patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install /tmp/aur-repo/
+          rm -f /tmp/aur-repo/patch-droid.py
           if [ -f SRCINFO ]; then
             cp -f SRCINFO /tmp/aur-repo/.SRCINFO
           fi
@@ -330,7 +329,7 @@ jobs:
           git config user.name "$AUR_USERNAME"
           git config user.email "$AUR_EMAIL"
           git checkout -B master
-          git add PKGBUILD .SRCINFO patch-droid.py patch_keybindings.py patches/patch-droid.py patches/patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
+          git add PKGBUILD .SRCINFO patch-title.py patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
           git commit -m "Update to v${{ needs.build-and-test.outputs.upstream_version }}" || exit 0
           git push origin master
           # Pushing a new pkgver automatically unflags out-of-date state on AUR web

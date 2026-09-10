@@ -70,7 +70,7 @@ def simulate_duplicate_matches():
     )
     matches = find_valid_matches(duplicate_data)
     print(f"  Result: Found {len(matches)} contextual matches.")
-    # In patches/patch-droid.py: len(matches) != 1 causes patch rejection
+    # In patches/patch-title.py: len(matches) != 1 causes patch rejection
     safe_rejection = (len(matches) != 1)
     assert safe_rejection, "Security failure: duplicate matches must be rejected!"
     print("  [SUCCESS] Patcher safely refuses to patch when matches are ambiguous (>1).")
