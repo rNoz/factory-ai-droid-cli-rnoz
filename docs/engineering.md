@@ -1,17 +1,35 @@
 # Engineering and safety
 
-- **Byte-exact title patch:** `patches/patch_title.py` replaces the contextual
-  title guard with a same-length JavaScript comment, preserving binary offsets.
-- **Keybinding rotation:** `patches/patch_keybindings.py` identifies the
+## Patch architecture
+
+- **Title patch:** `patches/patch_title.py` finds the title-specific
+  `isNonInteractiveCLIMode()` guard using surrounding title markers and replaces
+  it with a same-length JavaScript comment. It never relies on a fixed offset.
+- **Keybinding patch:** `patches/patch_keybindings.py` cross-validates the
   serialized keymap, guarded runtime dispatch, model matcher, and human-facing
-  chord hints. It rotates editor → `Ctrl-G`, model cycling → `Ctrl-P`, and
-  queued-message pull → `Ctrl-Q`.
-- **Fail closed:** Minified identifiers are inferred from structural anchors.
-  Missing, ambiguous, partially patched, or conflicting layouts abort without
-  writing. Action guards move with their action, binary size is preserved, and
-  an already-patched binary is accepted only when its complete layout matches.
-- **Release validation:** CI runs offline fixtures, the latest upstream
-  x64/baseline matrix, Arch packaging, smoke tests, and `aurscan`.
-- **Supply-chain scope:** The README image is documentation only. Release
-  source tarballs contain packaging metadata and patch sources, never the image
-  or downloaded upstream binaries.
+  chord hints before changing anything. It rotates editor → `Ctrl-G`, model
+  cycling → `Ctrl-P`, and queued-message pull → `Ctrl-Q`.
+- **Minifier tolerance:** Action identifiers are captured from structural
+  anchors, so upstream renames do not matter when the surrounding layout stays
+  compatible.
+- **Fail-closed safety:** Missing, ambiguous, conflicting, or partially patched
+  layouts abort before writing. Guards move with their actions, replacements
+  preserve binary length, and a full already-patched layout is required for
+  idempotent acceptance.
+
+## Packaging behavior
+
+- Interactive `makepkg` asks before each patch and defaults to applying it.
+  Non-interactive builds apply both patches without prompting.
+- The package prefers a system `rg` when available. If none is available at
+  build time, it downloads and verifies a bundled ripgrep fallback.
+- Arch builds select one CPU-appropriate Droid binary and smoke-test it.
+  Apple Silicon macOS is verified through the post-update patch script; Intel
+  macOS remains unverified.
+
+## Release and supply-chain controls
+
+CI runs offline fixtures, the latest upstream x64/baseline matrix, Arch
+packaging, smoke tests, shell/Python linters, and pinned `aurscan` checks.
+Release source tarballs contain only packaging metadata and patch sources;
+the README image and downloaded upstream binaries are never included.

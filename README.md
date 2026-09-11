@@ -1,8 +1,8 @@
-# Factory.ai Droid CLI (rnoz version)
+# Factory.ai Droid CLI (rNoz tweaks)
 
 <div align="center">
 
-> Always-fresh, automated packaging for [Factory CLI](https://app.factory.ai) (`droid`) featuring zero-waste deterministic session titling, hardware-optimal lean packaging, and supply-chain security auditing.
+> Always-fresh, automated packaging for [Factory CLI](https://app.factory.ai) (`droid`) featuring zero-waste deterministic session titling, optional cross-harness keybindings, hardware-optimal packaging, and automated release checks.
 
 [![CI Build & Security](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml/badge.svg?branch=main)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml)
 [![AUR version](https://img.shields.io/aur/version/factory-ai-droid-cli-rnoz-bin?logo=archlinux)](https://aur.archlinux.org/packages/factory-ai-droid-cli-rnoz-bin)
@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0%20%2F%20Proprietary-blue.svg)](LICENSE)
 [![Arch](https://img.shields.io/badge/arch-x86__64%20%7C%20aarch64%20%7C%20macOS-informational)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)](https://python.org)
-[![Upstream Tests](https://img.shields.io/badge/tested%20releases-7%20(100%25%20PASS)-brightgreen)]()
+[![Upstream Tests](https://img.shields.io/badge/tested%20releases-8%20(100%25%20PASS)-brightgreen)]()
 
 </div>
 
@@ -120,3 +120,19 @@ cd factory-ai-droid-cli-rnoz
 
 See [Verification and testing](docs/verification.md) and
 [Engineering and safety](docs/engineering.md).
+
+## Tested releases
+
+The title patch is covered from `0.200.0`; the interactive keybinding patch is
+covered from `0.205.0`. The current matrix includes `0.200.0`, `0.205.0`,
+`0.210.0`, `0.211.0`, `0.213.0`, `0.215.0`, `0.215.1`, and the latest
+upstream release, across x64 and x64-baseline binaries.
+
+## Contributing
+
+Proposals, suggestions, improvements, and pull requests are welcome.
+
+## License
+
+Repository scripts and documentation are Apache-2.0; upstream Factory binaries
+remain licensed by Factory AI.
