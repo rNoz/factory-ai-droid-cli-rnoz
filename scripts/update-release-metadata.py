@@ -9,6 +9,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 VERSION_LIST = ROOT / "tests/test_versions.py"
 README = ROOT / "README.md"
+PKGBUILD = ROOT / "PKGBUILD"
 
 
 def version_key(version: str) -> tuple[int, ...]:
