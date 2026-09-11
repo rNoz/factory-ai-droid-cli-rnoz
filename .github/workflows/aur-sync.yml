@@ -332,7 +332,7 @@ jobs:
           cd /tmp/aur-repo
           git config user.name "$AUR_USERNAME"
           git config user.email "$AUR_EMAIL"
-          git checkout -B master
+          git checkout -B master origin/master
           git add PKGBUILD .SRCINFO patch_title.py patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
           git commit -m "Update to v${{ needs.build-and-test.outputs.upstream_version }}" || exit 0
           git push origin master
