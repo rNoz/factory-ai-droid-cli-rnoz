@@ -15,7 +15,7 @@ chown -R builduser:builduser /build
 cd /build
 
 echo "==> Updating PKGBUILD version to ${UPSTREAM_VER}..."
-sed -i "s/^pkgver=.*/pkgver=${UPSTREAM_VER}/" PKGBUILD
+sed -i -e "s/^pkgver=.*/pkgver=${UPSTREAM_VER}/" -e "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
 
 echo "==> Updating .SRCINFO..."
 su builduser -c "makepkg --printsrcinfo > .SRCINFO"
