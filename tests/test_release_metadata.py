@@ -21,7 +21,23 @@ def test_pkgrel_is_preserved_for_same_version_rebuilds() -> None:
     assert MODULE.reset_pkgrel(text, "0.217.0", "0.217.0") == text
 
 
+def test_readme_has_single_license_section_and_nested_test_matrix() -> None:
+    text = MODULE.README.read_text()
+    assert text.count("\n## License\n") == 1
+    assert text.count("\n## Unofficial status and licensing\n") == 0
+    assert text.count("\n### Tested releases\n") == 1
+    assert text.index("## Verification and engineering") < text.index("### Tested releases")
+
+
+def test_ci_badge_uses_shields_endpoint() -> None:
+    text = MODULE.README.read_text()
+    assert "img.shields.io/github/actions/workflow/status/" in text
+    assert "actions/workflows/aur-sync.yml/badge.svg" not in text
+
+
 if __name__ == "__main__":
     test_pkgrel_resets_when_upstream_version_changes()
     test_pkgrel_is_preserved_for_same_version_rebuilds()
+    test_readme_has_single_license_section_and_nested_test_matrix()
+    test_ci_badge_uses_shields_endpoint()
     print("ALL RELEASE METADATA TESTS PASSED")
