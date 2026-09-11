@@ -1,0 +1,171 @@
+name: Publish merged release
+
+'on':
+  pull_request:
+    branches: [ main ]
+    types: [ closed ]
+
+concurrency:
+  group: factory-cli-release-publication
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  publish:
+    name: publish
+    if: >
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'release/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify release token is configured
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_TOKEN" ]; then
+            echo "::error::RELEASE_TOKEN repository secret is required for release publication."
+            exit 1
+          fi
+
+      - name: Checkout merged main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          UPSTREAM_VER=$(grep -oP '^pkgver=\K.*' PKGBUILD)
+          EXPECTED_BRANCH="release/v${UPSTREAM_VER}"
+          if [ "${{ github.event.pull_request.head.ref }}" != "$EXPECTED_BRANCH" ]; then
+            echo "::error::Merged release branch does not match PKGBUILD version."
+            exit 1
+          fi
+
+          if gh release view "v${UPSTREAM_VER}" >/dev/null 2>&1; then
+            TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v${UPSTREAM_VER}" --jq '.object.sha')
+            if [ "$TAG_SHA" != "$MERGE_SHA" ]; then
+              echo "::error::Existing release tag points to $TAG_SHA, expected $MERGE_SHA."
+              exit 1
+            fi
+          fi
+
+          python3 scripts/fetch-changelog.py "$UPSTREAM_VER" > /tmp/upstream-notes.md
+
+          cat << 'EOF' > /tmp/release-notes.md
+          ## Factory CLI v${UPSTREAM_VER} (rNoz tweaks)
+
+          ### Upstream Changes & Release Notes
+          __UPSTREAM_NOTES__
+
+          ---
+
+          ### Package Details
+          - **Zero-Waste Titling**: Neutralizes automatic background Claude Haiku 4.5 LLM titling calls on every prompt (optional).
+          - **Keybinding Remap**: The default remap is editor `Ctrl-G`, model cycling `Ctrl-P`, and queued-message pull `Ctrl-I` (optional).
+          - **Single Lean Binary**: Package contains only one binary compiled/chosen for the target CPU architecture.
+          - **Automatic Release Sync**: Checks Factory releases three times daily and publishes verified updates.
+          - **Platform Support**: Handles AVX2-optimized x86_64, non-AVX2 baseline x86_64, aarch64, and verified Apple Silicon macOS patching.
+          - **Official Factory Changelog**: [Factory Release Notes](https://docs.factory.ai/changelog/release-notes) ([Raw Markdown](https://docs.factory.ai/changelog/release-notes.md))
+          - **Clean Source Snapshot**: Distributes packaging scripts only (PKGBUILD, .SRCINFO, and patch sources). Upstream binaries are pulled directly from Factory servers by makepkg.
+
+          ### Installation
+
+          **Arch Linux (AUR):**
+          ```bash
+          yay -S factory-ai-droid-cli-rnoz-bin
+          ```
+
+          **macOS:**
+          ```bash
+          ./scripts/patch-macos.sh
+          ```
+
+          ### Maintainer Notification
+          cc @rNoz — Successfully built and smoke-tested in the Arch Linux container. AUR publication is attempted separately when configured; verify AUR availability before announcing the update.
+          EOF
+          sed -i 's/^          //' /tmp/release-notes.md
+          sed -i "s/\${UPSTREAM_VER}/$UPSTREAM_VER/g" /tmp/release-notes.md
+          python3 -c '
+          with open("/tmp/upstream-notes.md", "r") as f:
+              notes = f.read()
+          with open("/tmp/release-notes.md", "r") as f:
+              content = f.read()
+          with open("/tmp/release-notes.md", "w") as f:
+              f.write(content.replace("__UPSTREAM_NOTES__", notes))
+          '
+
+          tar -czf "factory-ai-droid-cli-rnoz-bin-${UPSTREAM_VER}.src.tar.gz" \
+            PKGBUILD .SRCINFO LICENSE patch_title.py patch_keybindings.py patches/patch_title.py patches/patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
+
+          if gh release view "v${UPSTREAM_VER}" >/dev/null 2>&1; then
+            gh release edit "v${UPSTREAM_VER}" --title "Factory CLI v${UPSTREAM_VER} (rNoz tweaks)" --notes-file /tmp/release-notes.md
+            gh release upload "v${UPSTREAM_VER}" "factory-ai-droid-cli-rnoz-bin-${UPSTREAM_VER}.src.tar.gz" --clobber
+          else
+            gh release create "v${UPSTREAM_VER}" "factory-ai-droid-cli-rnoz-bin-${UPSTREAM_VER}.src.tar.gz" \
+              --title "Factory CLI v${UPSTREAM_VER} (rNoz tweaks)" \
+              --notes-file /tmp/release-notes.md \
+              --target "$MERGE_SHA"
+          fi
+
+      - name: Publish to AUR (Optional)
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+          AUR_USERNAME: ${{ secrets.AUR_USERNAME || 'rNoz' }}
+          AUR_EMAIL: ${{ secrets.AUR_EMAIL || '8237539+rNoz@users.noreply.github.com' }}
+          AUR_PKG_NAME: ${{ vars.AUR_PKG_NAME || 'factory-ai-droid-cli-rnoz-bin' }}
+        run: |
+          if [ -z "$AUR_SSH_KEY" ]; then
+            echo "==> AUR_SSH_KEY secret is not set. Skipping AUR publish."
+            exit 0
+          fi
+
+          mkdir -p ~/.ssh
+          KEY_FILE="$(mktemp ~/.ssh/aur_key.XXXXXX)"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          echo "$AUR_SSH_KEY" > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+
+          echo "aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN" >> ~/.ssh/known_hosts
+          echo "aur.archlinux.org ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBLMiLrP8pVi5BFX2i3vepSUnpedeiewE5XptnUnau+ZoeUOPkpoCgZZuYfpaIQfhhJJI5qgnjJmr4hyJbe/zxow=" >> ~/.ssh/known_hosts
+
+          export GIT_SSH_COMMAND="ssh -i $KEY_FILE -o StrictHostKeyChecking=yes"
+          git clone "ssh://aur@aur.archlinux.org/${AUR_PKG_NAME}.git" /tmp/aur-repo
+          cp PKGBUILD .SRCINFO LICENSE patch_title.py patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install /tmp/aur-repo/
+          git -C /tmp/aur-repo rm --ignore-unmatch -f patch-droid.py
+          git -C /tmp/aur-repo rm --ignore-unmatch -f patch-title.py
+          git -C /tmp/aur-repo rm --ignore-unmatch -r -f patches
+          if [ -f SRCINFO ]; then
+            cp -f SRCINFO /tmp/aur-repo/.SRCINFO
+          fi
+          cd /tmp/aur-repo
+          git config user.name "$AUR_USERNAME"
+          git config user.email "$AUR_EMAIL"
+          git checkout -B master origin/master
+          git add PKGBUILD .SRCINFO LICENSE patch_title.py patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
+          git commit -m "Update to v${{ github.event.pull_request.head.ref }}" || exit 0
+          git push origin master
+
+      - name: Close resolved breakage issues
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          EXISTING_ISSUES=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "upstream-breakage" --state open --json number --jq '.[].number' || true)
+          for issue_num in $EXISTING_ISSUES; do
+            if [ -n "$issue_num" ]; then
+              gh issue close "$issue_num" --repo "$GITHUB_REPOSITORY" --comment "Resolved automatically by successful release v${{ github.event.pull_request.head.ref }}." || true
+            fi
+          done
