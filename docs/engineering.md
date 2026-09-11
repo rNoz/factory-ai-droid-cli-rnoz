@@ -8,7 +8,7 @@
 - **Keybinding patch:** `patches/patch_keybindings.py` cross-validates the
   serialized keymap, guarded runtime dispatch, model matcher, and human-facing
   chord hints before changing anything. It rotates editor → `Ctrl-G`, model
-  cycling → `Ctrl-P`, and queued-message pull → `Ctrl-Q`.
+  cycling → `Ctrl-P`, and queued-message pull → `Ctrl-I`.
 - **Minifier tolerance:** Action identifiers are captured from structural
   anchors, so upstream renames do not matter when the surrounding layout stays
   compatible.

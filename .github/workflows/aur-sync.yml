@@ -226,9 +226,10 @@ jobs:
 
       - name: Commit updated PKGBUILD and .SRCINFO to repository
         run: |
+          python3 scripts/update-release-metadata.py "${{ needs.build-and-test.outputs.upstream_version }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add PKGBUILD .SRCINFO
+          git add PKGBUILD .SRCINFO README.md tests/test_versions.py
           git commit -m "chore(release): bump factory-ai-droid-cli-rnoz-bin to v${{ needs.build-and-test.outputs.upstream_version }} [skip ci]" || exit 0
           git pull --rebase origin main || true
           git push
@@ -241,7 +242,7 @@ jobs:
           python3 scripts/fetch-changelog.py "$UPSTREAM_VER" > /tmp/upstream-notes.md
 
           cat << 'EOF' > /tmp/release-notes.md
-          ## Factory CLI v${UPSTREAM_VER} (Zero-Waste Patched)
+          ## Factory CLI v${UPSTREAM_VER} (rNoz tweaks)
 
           ### Upstream Changes & Release Notes
           __UPSTREAM_NOTES__
@@ -250,7 +251,7 @@ jobs:
 
           ### Package Details
           - **Zero-Waste Titling**: Neutralizes automatic background Claude Haiku 4.5 LLM titling calls on every prompt.
-          - **Optional Keybinding Remap**: Interactive builds can opt out; the default remap is editor `Ctrl-G`, model cycling `Ctrl-P`, and queued-message pull `Ctrl-Q`.
+          - **Optional Keybinding Remap**: Interactive builds can opt out; the default remap is editor `Ctrl-G`, model cycling `Ctrl-P`, and queued-message pull `Ctrl-I`.
           - **Single Lean Binary**: Package contains only one binary compiled/chosen for the target CPU architecture.
           - **Automatic Release Sync**: Checks Factory releases three times daily and publishes verified updates.
           - **Platform Support**: Handles AVX2-optimized x86_64, non-AVX2 baseline x86_64, aarch64, and verified Apple Silicon macOS patching.
@@ -290,11 +291,11 @@ jobs:
 
           if gh release view "v${UPSTREAM_VER}" >/dev/null 2>&1; then
             echo "==> Release v${UPSTREAM_VER} already exists. Updating release notes and source snapshot..."
-            gh release edit "v${UPSTREAM_VER}" --notes-file /tmp/release-notes.md
+            gh release edit "v${UPSTREAM_VER}" --title "Factory CLI v${UPSTREAM_VER} (rNoz tweaks)" --notes-file /tmp/release-notes.md
             gh release upload "v${UPSTREAM_VER}" "factory-ai-droid-cli-rnoz-bin-${UPSTREAM_VER}.src.tar.gz" --clobber
           else
             gh release create "v${UPSTREAM_VER}" "factory-ai-droid-cli-rnoz-bin-${UPSTREAM_VER}.src.tar.gz" \
-              --title "Factory CLI v${UPSTREAM_VER} (Patched)" \
+              --title "Factory CLI v${UPSTREAM_VER} (rNoz tweaks)" \
               --notes-file /tmp/release-notes.md \
               --target main
           fi

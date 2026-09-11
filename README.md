@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0%20%2F%20Proprietary-blue.svg)](LICENSE)
 [![Arch](https://img.shields.io/badge/arch-x86__64%20%7C%20aarch64%20%7C%20macOS-informational)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)](https://python.org)
-[![Upstream Tests](https://img.shields.io/badge/tested%20releases-8%20(100%25%20PASS)-brightgreen)]()
+[![Upstream Tests](https://img.shields.io/badge/tested%20releases-9%20(100%25%20PASS)-brightgreen)]()
 
 </div>
 
@@ -18,8 +18,8 @@
 
 ## Why this exists
 
-1. **Zero Titling Token Waste**: Factory CLI by default fires an unconfigurable background LLM call (Claude Haiku 4.5) on the first prompt of every interactive session, consuming an estimated ~300–500 input and ~10–25 output credits per conversation. This package enforces instant, local deterministic titling—saving API credits and eliminating initial latency while keeping terminal tab titles and session history logs intact.
-2. **Muscle-Memory Keybindings**: The interactive keymap rotates editor, model-cycle, and queued-message shortcuts to `Ctrl-G`, `Ctrl-P`, and `Ctrl-Q`, respectively. The patch refuses unknown or conflicting upstream layouts (see [Muscle-Memory Keybindings](#muscle-memory-keybindings)).
+1. **Zero Titling Token Waste**: Factory CLI by default fires an unconfigurable background LLM call (Claude Haiku 4.5) on the first prompt of every interactive session, consuming an estimated ~300–500 input and ~10–25 output credits per conversation. This package enforces instant, local deterministic titling—saving API credits and eliminating initial latency while keeping terminal tab titles and session history logs intact. **AUR package: optional feature, asked interactively.**
+2. **Muscle-Memory Keybindings**: The interactive keymap rotates editor, model-cycle, and queued-message shortcuts to `Ctrl-G`, `Ctrl-P`, and `Ctrl-I`, respectively. The patch refuses unknown or conflicting upstream layouts (see [Muscle-Memory Keybindings](#muscle-memory-keybindings)). **AUR package: optional feature, asked interactively.**
 3. **Hardware-Optimal Lean Binary**: Unlike generic packages that either force AVX2 (crashing older/virtualized CPUs with `SIGILL`) or ship bloated multi-binary bundles, `factory-ai-droid-cli-rnoz-bin` inspects the host CPU at build/package time and installs **only one single binary** (`/usr/lib/factory/droid`). Modern CPUs receive the AVX2-optimized build; legacy/VM/sandbox CPUs receive the baseline build. Package footprint is cut in half (~80 MB) with zero runtime wrapper overhead.
 4. **Always Fresh & Autonomous**: Automated CI checks Factory AI upstream releases 3× daily, validates patches against multiple releases in an official Arch Linux container, and publishes updates with zero manual intervention.
 5. **Supply Chain Security & Linters**: Every build is scanned with [aurscan](https://github.com/manticore-projects/aurscan) (`v0.9.0`, SHA-256 pinned) to guarantee clean, non-malicious packaging scripts. Code is strictly validated with `flake8`, `shellcheck`, and `shfmt`.
@@ -29,13 +29,13 @@
 
 ## Muscle-Memory Keybindings
 
-![Factory CLI keybinding remap: editor moves from Ctrl-P to Ctrl-G, model cycle from Ctrl-N to Ctrl-P, queued-message pull from Ctrl-G to Ctrl-Q](docs/images/factory-keybindings-remap.png)
+![Factory CLI keybinding remap: editor moves from Ctrl-P to Ctrl-G, model cycle from Ctrl-N to Ctrl-P, queued-message pull from Ctrl-G to Ctrl-I](docs/images/factory-keybindings-remap.png)
 
 | Action | Upstream | This package |
 | :-- | :-- | :-- |
 | Open input in editor | `Ctrl-P` | `Ctrl-G` |
 | Cycle AI model | `Ctrl-N` | `Ctrl-P` |
-| Pull queued message | `Ctrl-G` | `Ctrl-Q` |
+| Pull queued message | `Ctrl-G` | `Ctrl-I` |
 
 Applied in place by `patches/patch_keybindings.py` at identical byte length; any unknown or partially patched layout aborts the patch. Interactive `makepkg` asks before each patch (default `[Y]`); non-interactive builds apply both.
 
@@ -124,9 +124,19 @@ See [Verification and testing](docs/verification.md) and
 ## Tested releases
 
 The title patch is covered from `0.200.0`; the interactive keybinding patch is
-covered from `0.205.0`. The current matrix includes `0.200.0`, `0.205.0`,
-`0.210.0`, `0.211.0`, `0.213.0`, `0.215.0`, `0.215.1`, and the latest
-upstream release, across x64 and x64-baseline binaries.
+covered from `0.205.0`.
+
+| Release | x64 AVX2 | x64 baseline |
+| :-- | :-- | :-- |
+| 0.200.0 | [![0.200.0 x64 AVX2](https://img.shields.io/badge/0.200.0-x64%20AVX2-orange)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) | [![0.200.0 x64 baseline](https://img.shields.io/badge/0.200.0-x64%20baseline-orange)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) |
+| 0.205.0 | [![0.205.0 x64 AVX2](https://img.shields.io/badge/0.205.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) | [![0.205.0 x64 baseline](https://img.shields.io/badge/0.205.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) |
+| 0.210.0 | [![0.210.0 x64 AVX2](https://img.shields.io/badge/0.210.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) | [![0.210.0 x64 baseline](https://img.shields.io/badge/0.210.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) |
+| 0.211.0 | [![0.211.0 x64 AVX2](https://img.shields.io/badge/0.211.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) | [![0.211.0 x64 baseline](https://img.shields.io/badge/0.211.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) |
+| 0.213.0 | [![0.213.0 x64 AVX2](https://img.shields.io/badge/0.213.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) | [![0.213.0 x64 baseline](https://img.shields.io/badge/0.213.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) |
+| 0.215.0 | [![0.215.0 x64 AVX2](https://img.shields.io/badge/0.215.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) | [![0.215.0 x64 baseline](https://img.shields.io/badge/0.215.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) |
+| 0.215.1 | [![0.215.1 x64 AVX2](https://img.shields.io/badge/0.215.1-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) | [![0.215.1 x64 baseline](https://img.shields.io/badge/0.215.1-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) |
+| 0.216.0 | [![0.216.0 x64 AVX2](https://img.shields.io/badge/0.216.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) | [![0.216.0 x64 baseline](https://img.shields.io/badge/0.216.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) |
+| 0.217.0 | [![0.217.0 x64 AVX2](https://img.shields.io/badge/0.217.0%20x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) | [![0.217.0 x64 baseline](https://img.shields.io/badge/0.217.0%20x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) |
 
 ## Contributing
 
@@ -134,5 +144,5 @@ Proposals, suggestions, improvements, and pull requests are welcome.
 
 ## License
 
-Repository scripts and documentation are Apache-2.0; upstream Factory binaries
-remain licensed by Factory AI.
+Repository scripts and documentation are Apache-2.0.
+Upstream Factory binaries remain licensed by Factory AI.
