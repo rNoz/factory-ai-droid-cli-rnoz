@@ -2,7 +2,7 @@
 
 <div align="center">
 
-> Always-fresh, automated packaging for [Factory CLI](https://app.factory.ai) (`droid`) featuring zero-waste deterministic session titling, optional cross-harness keybindings, hardware-optimal packaging, and automated release checks.
+> Always-fresh, automated packaging for [Factory.ai CLI](https://app.factory.ai) (`droid`) featuring zero-waste deterministic session titling, cross-harness keybindings, hardware-optimal packaging, and automated release security checks.
 
 [![CI Build & Security](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml/badge.svg?branch=main)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml)
 [![AUR version](https://img.shields.io/aur/version/factory-ai-droid-cli-rnoz-bin?logo=archlinux)](https://aur.archlinux.org/packages/factory-ai-droid-cli-rnoz-bin)
@@ -123,20 +123,17 @@ See [Verification and testing](docs/verification.md) and
 
 ## Tested releases
 
-The title patch is covered from `0.200.0`; the interactive keybinding patch is
-covered from `0.205.0`.
-
-| Release | x64 AVX2 | x64 baseline |
-| :-- | :-- | :-- |
-| 0.200.0 | [![0.200.0 x64 AVX2](https://img.shields.io/badge/0.200.0-x64%20AVX2-orange)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) | [![0.200.0 x64 baseline](https://img.shields.io/badge/0.200.0-x64%20baseline-orange)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) |
-| 0.205.0 | [![0.205.0 x64 AVX2](https://img.shields.io/badge/0.205.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) | [![0.205.0 x64 baseline](https://img.shields.io/badge/0.205.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) |
-| 0.210.0 | [![0.210.0 x64 AVX2](https://img.shields.io/badge/0.210.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) | [![0.210.0 x64 baseline](https://img.shields.io/badge/0.210.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) |
-| 0.211.0 | [![0.211.0 x64 AVX2](https://img.shields.io/badge/0.211.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) | [![0.211.0 x64 baseline](https://img.shields.io/badge/0.211.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) |
-| 0.213.0 | [![0.213.0 x64 AVX2](https://img.shields.io/badge/0.213.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) | [![0.213.0 x64 baseline](https://img.shields.io/badge/0.213.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) |
-| 0.215.0 | [![0.215.0 x64 AVX2](https://img.shields.io/badge/0.215.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) | [![0.215.0 x64 baseline](https://img.shields.io/badge/0.215.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) |
-| 0.215.1 | [![0.215.1 x64 AVX2](https://img.shields.io/badge/0.215.1-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) | [![0.215.1 x64 baseline](https://img.shields.io/badge/0.215.1-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) |
-| 0.216.0 | [![0.216.0 x64 AVX2](https://img.shields.io/badge/0.216.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) | [![0.216.0 x64 baseline](https://img.shields.io/badge/0.216.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/releases/tag/v0.217.0) |
-| 0.217.0 | [![0.217.0 x64 AVX2](https://img.shields.io/badge/0.217.0%20x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) | [![0.217.0 x64 baseline](https://img.shields.io/badge/0.217.0%20x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) |
+| linux x86_64 avx2 | linux x86_64 |
+| :-- | :-- |
+| [![0.200.0 x64 AVX2](https://img.shields.io/badge/0.200.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) | [![0.200.0 x64 baseline](https://img.shields.io/badge/0.200.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) |
+| [![0.205.0 x64 AVX2](https://img.shields.io/badge/0.205.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) | [![0.205.0 x64 baseline](https://img.shields.io/badge/0.205.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) |
+| [![0.210.0 x64 AVX2](https://img.shields.io/badge/0.210.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) | [![0.210.0 x64 baseline](https://img.shields.io/badge/0.210.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) |
+| [![0.211.0 x64 AVX2](https://img.shields.io/badge/0.211.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) | [![0.211.0 x64 baseline](https://img.shields.io/badge/0.211.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) |
+| [![0.213.0 x64 AVX2](https://img.shields.io/badge/0.213.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) | [![0.213.0 x64 baseline](https://img.shields.io/badge/0.213.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) |
+| [![0.215.0 x64 AVX2](https://img.shields.io/badge/0.215.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) | [![0.215.0 x64 baseline](https://img.shields.io/badge/0.215.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) |
+| [![0.215.1 x64 AVX2](https://img.shields.io/badge/0.215.1-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) | [![0.215.1 x64 baseline](https://img.shields.io/badge/0.215.1-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) |
+| [![0.216.0 x64 AVX2](https://img.shields.io/badge/0.216.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) | [![0.216.0 x64 baseline](https://img.shields.io/badge/0.216.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) |
+| [![0.217.0 x64 AVX2](https://img.shields.io/badge/0.217.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) | [![0.217.0 x64 baseline](https://img.shields.io/badge/0.217.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) |
 
 ## Contributing
 
