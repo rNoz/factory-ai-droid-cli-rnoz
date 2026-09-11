@@ -115,7 +115,7 @@ jobs:
           echo "Current  version: $CURRENT_VER"
 
           if [ "$UPSTREAM_RAW" != "$CURRENT_VER" ] || [ "${{ inputs.force_build }}" = "true" ] ||
-             { [ "${{ github.event_name }}" = "pull_request" ] && [[ "${{ github.head_ref }}" == release/* ]]; }; then
+             [ "${{ github.event_name }}" = "pull_request" ]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
           else
             echo "should_build=false" >> $GITHUB_OUTPUT
@@ -155,7 +155,7 @@ jobs:
         run: |
           echo "==> Build/test failed on main branch. Triggering breakage alerts..."
 
-          EXISTING_ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "upstream-breakage" --state open --json number --jq '.[0].number' || true)
+          EXISTING_ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "upstream-breakage" --state open --json number --jq '.[0].number // empty' || true)
           if [ -z "$EXISTING_ISSUE" ]; then
             echo "==> Creating GitHub issue to alert maintainer..."
             cat << 'EOF' > /tmp/issue-body.md
@@ -244,9 +244,14 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add PKGBUILD .SRCINFO README.md tests/test_versions.py
+          if git diff --cached --quiet; then
+            echo "::notice::Release metadata is already current; no release PR is needed."
+            exit 0
+          fi
           git commit -m "chore(release): prepare v${UPSTREAM_VER}"
+          git fetch origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" || true
           git push --force-with-lease origin "$BRANCH"
-          PR_URL=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "rNoz:$BRANCH" --base main --json url --jq '.[0].url')
+          PR_URL=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$BRANCH" --base main --json url --jq '.[0].url // empty')
           if [ -z "$PR_URL" ]; then
             PR_URL=$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" \
               --title "chore(release): prepare v${UPSTREAM_VER}" \
