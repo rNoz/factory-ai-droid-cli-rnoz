@@ -44,12 +44,19 @@ def test_release_automation_uses_merge_gated_prs() -> None:
     assert "secrets.RELEASE_TOKEN" in workflow
     assert "RELEASE_TOKEN repository secret is required" in workflow
     assert "gh pr create" in workflow
+    assert "git diff --cached --quiet" in workflow
+    assert "git fetch origin \"+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH\"" in workflow
     assert "git push --force-with-lease origin \"$BRANCH\"" in workflow
-    assert "git push\n" not in workflow
+    assert "--jq '.[0].url // empty'" in workflow
+    assert '[ "${{ github.event_name }}" = "pull_request" ]' in workflow
     assert "github.event.pull_request.merged == true" in publication
     assert "github.event.pull_request.head.repo.full_name == github.repository" in publication
+    assert "github.event.pull_request.merge_commit_sha" in publication
+    assert "ref: ${{ github.event.pull_request.merge_commit_sha }}" in publication
     assert "MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}" in publication
     assert "RELEASE_TOKEN repository secret is required" in publication
+    assert "/commits/v${UPSTREAM_VER}" in publication
+    assert 'git diff --cached --quiet' in publication
     assert '--target "$MERGE_SHA"' in publication
 
 

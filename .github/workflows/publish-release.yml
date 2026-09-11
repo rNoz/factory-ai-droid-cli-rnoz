@@ -34,8 +34,8 @@ jobs:
       - name: Checkout merged main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: main
-          token: ${{ secrets.RELEASE_TOKEN }}
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
@@ -47,16 +47,17 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           UPSTREAM_VER=$(grep -oP '^pkgver=\K.*' PKGBUILD)
           EXPECTED_BRANCH="release/v${UPSTREAM_VER}"
-          if [ "${{ github.event.pull_request.head.ref }}" != "$EXPECTED_BRANCH" ]; then
+          if [ "$HEAD_REF" != "$EXPECTED_BRANCH" ]; then
             echo "::error::Merged release branch does not match PKGBUILD version."
             exit 1
           fi
 
           if gh release view "v${UPSTREAM_VER}" >/dev/null 2>&1; then
-            TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v${UPSTREAM_VER}" --jq '.object.sha')
+            TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/commits/v${UPSTREAM_VER}" --jq '.sha')
             if [ "$TAG_SHA" != "$MERGE_SHA" ]; then
               echo "::error::Existing release tag points to $TAG_SHA, expected $MERGE_SHA."
               exit 1
@@ -152,20 +153,26 @@ jobs:
             cp -f SRCINFO /tmp/aur-repo/.SRCINFO
           fi
           cd /tmp/aur-repo
+          UPSTREAM_VER=$(grep -oP '^pkgver=\K.*' /github/workspace/PKGBUILD)
           git config user.name "$AUR_USERNAME"
           git config user.email "$AUR_EMAIL"
           git checkout -B master origin/master
           git add PKGBUILD .SRCINFO LICENSE patch_title.py patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
-          git commit -m "Update to v${{ github.event.pull_request.head.ref }}" || exit 0
-          git push origin master
+          if git diff --cached --quiet; then
+            echo "==> AUR metadata is already current."
+          else
+            git commit -m "Update to v${UPSTREAM_VER}"
+            git push origin master
+          fi
 
       - name: Close resolved breakage issues
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
+          UPSTREAM_VER=$(grep -oP '^pkgver=\K.*' PKGBUILD)
           EXISTING_ISSUES=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "upstream-breakage" --state open --json number --jq '.[].number' || true)
           for issue_num in $EXISTING_ISSUES; do
             if [ -n "$issue_num" ]; then
-              gh issue close "$issue_num" --repo "$GITHUB_REPOSITORY" --comment "Resolved automatically by successful release v${{ github.event.pull_request.head.ref }}." || true
+              gh issue close "$issue_num" --repo "$GITHUB_REPOSITORY" --comment "Resolved automatically by successful release v${UPSTREAM_VER}." || true
             fi
           done
