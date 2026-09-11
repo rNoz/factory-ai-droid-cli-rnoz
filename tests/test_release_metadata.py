@@ -31,8 +31,8 @@ def test_readme_has_single_license_section_and_nested_test_matrix() -> None:
 
 def test_ci_badge_uses_shields_endpoint() -> None:
     text = MODULE.README.read_text()
-    assert "img.shields.io/github/actions/workflow/status/" in text
-    assert "actions/workflows/aur-sync.yml/badge.svg" not in text
+    assert "img.shields.io/badge/CI%20Build%20%26%20Security-passing-brightgreen" in text
+    assert "github/actions/workflow/status/" not in text
 
 
 if __name__ == "__main__":

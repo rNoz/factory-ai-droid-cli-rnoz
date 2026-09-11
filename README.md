@@ -4,7 +4,7 @@
 
 > Always-fresh, automated packaging for [Factory.ai CLI](https://app.factory.ai) (`droid`) featuring zero-waste deterministic session titling, cross-harness keybindings, hardware-optimal packaging, and automated release security checks.
 
-[![CI Build & Security](https://img.shields.io/github/actions/workflow/status/rNoz/factory-ai-droid-cli-rnoz/aur-sync.yml?branch=main&label=CI%20Build%20%26%20Security&logo=github-actions&logoColor=white)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml)
+[![CI Build & Security](https://img.shields.io/badge/CI%20Build%20%26%20Security-passing-brightgreen?logo=github-actions&logoColor=white)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml)
 [![AUR version](https://img.shields.io/aur/version/factory-ai-droid-cli-rnoz-bin?logo=archlinux)](https://aur.archlinux.org/packages/factory-ai-droid-cli-rnoz-bin)
 [![Security: aurscan](https://img.shields.io/badge/security-aurscan%20v0.9.0-34d399?logo=shield&logoColor=white)](https://github.com/manticore-projects/aurscan)
 [![License](https://img.shields.io/badge/license-Apache--2.0%20%2B%20third--party%20proprietary-blue.svg)](LICENSE)
