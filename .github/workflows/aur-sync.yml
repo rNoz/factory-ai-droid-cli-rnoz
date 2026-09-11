@@ -92,6 +92,8 @@ jobs:
           python3 tests/test_keybindings.py
           echo "==> Running breakage & recovery simulation suite..."
           python3 tests/simulate_breakage.py
+          echo "==> Running release metadata regression tests..."
+          python3 tests/test_release_metadata.py
 
       - name: Detect and validate upstream Factory CLI version
         id: check_version
@@ -168,7 +170,7 @@ jobs:
           - **Upstream Binary Base**: `https://downloads.factory.ai/factory-cli/releases/`
 
           ### Maintainer Alert
-          cc @rNoz — Automated build verification failed for upstream release `v${UPSTREAM_VER}`. Package has been flagged out-of-date on AUR. Manual inspection required.
+          cc @rNoz — Automated build verification failed for upstream release `v${UPSTREAM_VER}`. Manual inspection required.
           EOF
             sed -i 's/^          //' /tmp/issue-body.md
             sed -i "s/\${UPSTREAM_VER}/$UPSTREAM_VER/g" /tmp/issue-body.md
@@ -261,7 +263,7 @@ jobs:
           ```
 
           ### Maintainer Notification
-          cc @rNoz — Successfully built, smoke-tested in Arch Linux container, and published to AUR. Ready for system update (`yay -Syu`).
+          cc @rNoz — Successfully built and smoke-tested in the Arch Linux container. AUR publication is attempted separately when configured; verify AUR availability before announcing the update.
           EOF
           sed -i 's/^          //' /tmp/release-notes.md
           sed -i "s/\${UPSTREAM_VER}/$UPSTREAM_VER/g" /tmp/release-notes.md
@@ -277,7 +279,7 @@ jobs:
           '
 
           tar -czf "factory-ai-droid-cli-rnoz-bin-${UPSTREAM_VER}.src.tar.gz" \
-            PKGBUILD .SRCINFO patch_title.py patch_keybindings.py patches/patch_title.py patches/patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
+            PKGBUILD .SRCINFO LICENSE patch_title.py patch_keybindings.py patches/patch_title.py patches/patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
 
           if gh release view "v${UPSTREAM_VER}" >/dev/null 2>&1; then
             echo "==> Release v${UPSTREAM_VER} already exists. Updating release notes and source snapshot..."
@@ -313,7 +315,7 @@ jobs:
 
           export GIT_SSH_COMMAND="ssh -i $KEY_FILE -o StrictHostKeyChecking=yes"
           git clone "ssh://aur@aur.archlinux.org/${AUR_PKG_NAME}.git" /tmp/aur-repo
-          cp PKGBUILD .SRCINFO patch_title.py patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install /tmp/aur-repo/
+          cp PKGBUILD .SRCINFO LICENSE patch_title.py patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install /tmp/aur-repo/
           git -C /tmp/aur-repo rm --ignore-unmatch -f patch-droid.py
           git -C /tmp/aur-repo rm --ignore-unmatch -f patch-title.py
           git -C /tmp/aur-repo rm --ignore-unmatch -r -f patches
@@ -324,7 +326,7 @@ jobs:
           git config user.name "$AUR_USERNAME"
           git config user.email "$AUR_EMAIL"
           git checkout -B master origin/master
-          git add PKGBUILD .SRCINFO patch_title.py patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
+          git add PKGBUILD .SRCINFO LICENSE patch_title.py patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
           git commit -m "Update to v${{ needs.build-and-test.outputs.upstream_version }}" || exit 0
           git push origin master
           # Pushing a new pkgver automatically unflags out-of-date state on AUR web

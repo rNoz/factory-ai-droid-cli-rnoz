@@ -18,3 +18,7 @@ rg
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Local agent state and credentials
+.overlay/
+.tokensave/

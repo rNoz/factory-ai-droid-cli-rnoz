@@ -25,6 +25,25 @@ def configured_versions() -> list[str]:
     )
 
 
+def reset_pkgrel(text: str, current_version: str, new_version: str) -> str:
+    if current_version == new_version:
+        return text
+    updated, count = re.subn(r"^pkgrel=\d+$", "pkgrel=1", text, count=1, flags=re.MULTILINE)
+    if count != 1:
+        raise RuntimeError("pkgrel field not found")
+    return updated
+
+
+def reset_pkgrel_if_version_changed(version: str) -> None:
+    text = PKGBUILD.read_text()
+    match = re.search(r"^pkgver=(.+)$", text, re.MULTILINE)
+    if not match:
+        raise RuntimeError("pkgver field not found")
+    updated = reset_pkgrel(text, match.group(1), version)
+    if updated != text:
+        PKGBUILD.write_text(updated)
+
+
 def update_version_list(version: str) -> None:
     text = VERSION_LIST.read_text()
     versions = configured_versions()
@@ -69,6 +88,7 @@ def main() -> int:
         print(f"usage: {Path(sys.argv[0]).name} VERSION", file=sys.stderr)
         return 2
     version = sys.argv[1]
+    reset_pkgrel_if_version_changed(version)
     update_version_list(version)
     update_readme(version)
     return 0
