@@ -7,7 +7,7 @@
 [![CI Build & Security](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml/badge.svg?branch=main)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml)
 [![AUR version](https://img.shields.io/aur/version/factory-ai-droid-cli-rnoz-bin?logo=archlinux)](https://aur.archlinux.org/packages/factory-ai-droid-cli-rnoz-bin)
 [![Security: aurscan](https://img.shields.io/badge/security-aurscan%20v0.9.0-34d399?logo=shield&logoColor=white)](https://github.com/manticore-projects/aurscan)
-[![License](https://img.shields.io/badge/license-Apache--2.0%20%2F%20Proprietary-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache--2.0%20%2B%20third--party%20proprietary-blue.svg)](LICENSE)
 [![Arch](https://img.shields.io/badge/arch-x86__64%20%7C%20aarch64%20%7C%20macOS-informational)]()
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)](https://python.org)
 [![Upstream Tests](https://img.shields.io/badge/tested%20releases-9%20(100%25%20PASS)-brightgreen)]()
@@ -18,9 +18,9 @@
 
 ## Why this exists
 
-1. **Zero Titling Token Waste**: Factory CLI by default fires an unconfigurable background LLM call (Claude Haiku 4.5) on the first prompt of every interactive session, consuming an estimated ~300–500 input and ~10–25 output credits per conversation. This package enforces instant, local deterministic titling—saving API credits and eliminating initial latency while keeping terminal tab titles and session history logs intact. **AUR package: optional feature, asked interactively.**
+1. **Zero Titling Token Waste**: Factory CLI by default fires an unconfigurable background LLM call (Claude Haiku 4.5) on the first prompt of every interactive session. In local observations this consumed an estimated ~300–500 input and ~10–25 output credits per conversation. This package enforces instant, local deterministic titling—saving API credits and eliminating initial latency while keeping terminal tab titles and session history logs intact. **AUR package: optional feature, asked interactively.**
 2. **Muscle-Memory Keybindings**: The interactive keymap rotates editor, model-cycle, and queued-message shortcuts to `Ctrl-G`, `Ctrl-P`, and `Ctrl-I`, respectively. The patch refuses unknown or conflicting upstream layouts (see [Muscle-Memory Keybindings](#muscle-memory-keybindings)). **AUR package: optional feature, asked interactively.**
-3. **Hardware-Optimal Lean Binary**: Unlike generic packages that either force AVX2 (crashing older/virtualized CPUs with `SIGILL`) or ship bloated multi-binary bundles, `factory-ai-droid-cli-rnoz-bin` inspects the host CPU at build/package time and installs **only one single binary** (`/usr/lib/factory/droid`). Modern CPUs receive the AVX2-optimized build; legacy/VM/sandbox CPUs receive the baseline build. Package footprint is cut in half (~80 MB) with zero runtime wrapper overhead.
+3. **Hardware-Optimal Lean Binary**: Unlike generic packages that either force AVX2 (crashing older/virtualized CPUs with `SIGILL`) or ship bloated multi-binary bundles, `factory-ai-droid-cli-rnoz-bin` inspects the host CPU at build/package time and installs **only one single binary** (`/usr/lib/factory/droid`). Modern CPUs receive the AVX2-optimized build; legacy/VM/sandbox CPUs receive the baseline build. Package size varies with upstream releases; only one architecture-specific binary is installed, with no runtime wrapper overhead.
 4. **Always Fresh & Autonomous**: Automated CI checks Factory AI upstream releases 3× daily, validates patches against multiple releases in an official Arch Linux container, and publishes updates with zero manual intervention.
 5. **Supply Chain Security & Linters**: Every build is scanned with [aurscan](https://github.com/manticore-projects/aurscan) (`v0.9.0`, SHA-256 pinned) to guarantee clean, non-malicious packaging scripts. Code is strictly validated with `flake8`, `shellcheck`, and `shfmt`.
 6. **Clean & Lean Packaging**: Only bundles what `droid` actually requires. Includes bundled `ripgrep` with optional fallback to system `ripgrep`. Upstream binaries are fetched dynamically during installation and validated with fail-closed SHA-256 checks.
@@ -138,6 +138,14 @@ See [Verification and testing](docs/verification.md) and
 ## Contributing
 
 Proposals, suggestions, improvements, and pull requests are welcome.
+
+## Unofficial status and licensing
+
+This is an unofficial community package. It is not affiliated with, endorsed
+by, or sponsored by Factory AI. The repository scripts and documentation are
+Apache-2.0; downloaded Factory and ripgrep binaries remain third-party
+components subject to their respective licenses and terms. Review the
+applicable upstream terms before using or redistributing this package.
 
 ## License
 

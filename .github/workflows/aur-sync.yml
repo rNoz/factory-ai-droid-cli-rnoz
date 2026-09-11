@@ -18,6 +18,10 @@ name: Check Upstream, Patch & Build Factory CLI
         default: false
         type: boolean
 
+concurrency:
+  group: factory-cli-release
+  cancel-in-progress: false
+
 permissions:
   contents: read
   issues: write
@@ -44,12 +48,12 @@ jobs:
           echo "Manual trigger authorized for maintainer: ${{ github.actor }}"
 
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
 
@@ -122,12 +126,12 @@ jobs:
           chmod +x scripts/build-in-container.sh
           docker run --rm \
             -v "$GITHUB_WORKSPACE":/github/workspace \
-            archlinux:base-devel \
+            archlinux@sha256:61f7de2dd88cc4ba1fe36c24cfe1a503c3936984492d6405eeab013ce6ac68c5 \
             /github/workspace/scripts/build-in-container.sh "${{ steps.check_version.outputs.upstream_version }}"
 
       - name: Upload packaging metadata
         if: steps.check_version.outputs.should_build == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: package-metadata-${{ steps.check_version.outputs.upstream_version }}
           include-hidden-files: true
@@ -140,12 +144,10 @@ jobs:
         if: failure() && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
-          AUR_PKG_NAME: ${{ vars.AUR_PKG_NAME || 'factory-ai-droid-cli-rnoz-bin' }}
           UPSTREAM_VER: ${{ steps.check_version.outputs.upstream_version || 'unknown' }}
         run: |
           echo "==> Build/test failed on main branch. Triggering breakage alerts..."
-          
+
           EXISTING_ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "upstream-breakage" --state open --json number --jq '.[0].number' || true)
           if [ -z "$EXISTING_ISSUE" ]; then
             echo "==> Creating GitHub issue to alert maintainer..."
@@ -184,18 +186,6 @@ jobs:
             echo "==> Breakage issue #$EXISTING_ISSUE is already open."
           fi
 
-          if [ -n "$AUR_SSH_KEY" ]; then
-            echo "==> Flagging package out-of-date on AUR..."
-            mkdir -p ~/.ssh
-            KEY_FILE="$(mktemp ~/.ssh/aur_key.XXXXXX)"
-            trap 'rm -f "$KEY_FILE"' EXIT
-            echo "$AUR_SSH_KEY" > "$KEY_FILE"
-            chmod 600 "$KEY_FILE"
-            echo "aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN" >> ~/.ssh/known_hosts
-            echo "aur.archlinux.org ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBLMiLrP8pVi5BFX2i3vepSUnpedeiewE5XptnUnau+ZoeUOPkpoCgZZuYfpaIQfhhJJI5qgnjJmr4hyJbe/zxow=" >> ~/.ssh/known_hosts
-            ssh -i "$KEY_FILE" -o StrictHostKeyChecking=yes aur@aur.archlinux.org "flag $AUR_PKG_NAME 'Automated build failed verification: new upstream release requires patch update'" || true
-          fi
-
   publish:
     name: publish
     needs: build-and-test
@@ -206,10 +196,10 @@ jobs:
       issues: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Download packaging metadata
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: package-metadata-${{ needs.build-and-test.outputs.upstream_version }}
 
@@ -220,7 +210,7 @@ jobs:
           fi
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: '3.12'
 
@@ -231,7 +221,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add PKGBUILD .SRCINFO README.md tests/test_versions.py
           git commit -m "chore(release): bump factory-ai-droid-cli-rnoz-bin to v${{ needs.build-and-test.outputs.upstream_version }} [skip ci]" || exit 0
-          git pull --rebase origin main || true
+          git pull --rebase origin main
           git push
 
       - name: Create GitHub Release
@@ -320,7 +310,7 @@ jobs:
 
           echo "aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN" >> ~/.ssh/known_hosts
           echo "aur.archlinux.org ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBLMiLrP8pVi5BFX2i3vepSUnpedeiewE5XptnUnau+ZoeUOPkpoCgZZuYfpaIQfhhJJI5qgnjJmr4hyJbe/zxow=" >> ~/.ssh/known_hosts
-          
+
           export GIT_SSH_COMMAND="ssh -i $KEY_FILE -o StrictHostKeyChecking=yes"
           git clone "ssh://aur@aur.archlinux.org/${AUR_PKG_NAME}.git" /tmp/aur-repo
           cp PKGBUILD .SRCINFO patch_title.py patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install /tmp/aur-repo/
