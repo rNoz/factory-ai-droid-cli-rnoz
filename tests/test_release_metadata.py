@@ -3,7 +3,10 @@
 import hashlib
 import importlib.util
 import re
+import shutil
 import subprocess
+import sys
+import tempfile
 from pathlib import Path
 
 
@@ -76,6 +79,39 @@ def test_pkgrel_increments_for_same_version_package_rebuilds() -> None:
 def test_pkgrel_can_be_set_for_release_metadata() -> None:
     text = "pkgver=0.217.0\npkgrel=1\n"
     assert MODULE.set_pkgrel(text, 3) == "pkgver=0.217.0\npkgrel=3\n"
+
+
+def test_pkgver_can_be_set_for_release_metadata() -> None:
+    text = "pkgver=0.217.0\npkgrel=1\n"
+    assert MODULE.set_pkgver(text, "0.218.0") == "pkgver=0.218.0\npkgrel=1\n"
+
+
+def test_standalone_metadata_update_synchronizes_all_version_fields() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        for relative in ("PKGBUILD", ".SRCINFO", "README.md", "tests/test_versions.py"):
+            destination = root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(MODULE.ROOT / relative, destination)
+
+        original_paths = MODULE.ROOT, MODULE.PKGBUILD, MODULE.README, MODULE.VERSION_LIST
+        MODULE.ROOT = root
+        MODULE.PKGBUILD = root / "PKGBUILD"
+        MODULE.README = root / "README.md"
+        MODULE.VERSION_LIST = root / "tests/test_versions.py"
+        original_argv = sys.argv
+        sys.argv = ["update-release-metadata.py", "0.219.0", "--set-pkgrel", "4"]
+        try:
+            assert MODULE.main() == 0
+        finally:
+            sys.argv = original_argv
+            MODULE.ROOT, MODULE.PKGBUILD, MODULE.README, MODULE.VERSION_LIST = original_paths
+
+        assert "pkgver=0.219.0\npkgrel=4\n" in (root / "PKGBUILD").read_text()
+        srcinfo = (root / ".SRCINFO").read_text()
+        assert re.search(r"^\s*pkgver = 0.219.0$", srcinfo, re.MULTILINE)
+        assert re.search(r"^\s*pkgrel = 4$", srcinfo, re.MULTILINE)
+        assert "Current package revision: `0.219.0-4`" in (root / "README.md").read_text()
 
 
 def test_srcinfo_revision_tracks_package_metadata() -> None:
@@ -189,6 +225,12 @@ def test_release_repair_guards_are_pinned() -> None:
 
 
 if __name__ == "__main__":
+    test_upstream_detector_parses_first_semantic_ver()
+    test_upstream_detector_rejects_missing_or_malformed_ver()
+    test_upstream_detector_validates_owner_override()
+    test_upstream_detector_cli_prints_owner_override()
+    test_pkgver_can_be_set_for_release_metadata()
+    test_standalone_metadata_update_synchronizes_all_version_fields()
     test_pkgrel_resets_when_upstream_version_changes()
     test_pkgrel_is_preserved_for_same_version_rebuilds()
     test_pkgrel_increments_for_same_version_package_rebuilds()
