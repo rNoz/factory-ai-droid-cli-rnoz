@@ -157,6 +157,7 @@ jobs:
 
           export GIT_SSH_COMMAND="ssh -i $KEY_FILE -o StrictHostKeyChecking=yes"
           git clone "ssh://aur@aur.archlinux.org/${AUR_PKG_NAME}.git" /tmp/aur-repo
+          git -C /tmp/aur-repo checkout -B master origin/master
           cp PKGBUILD .SRCINFO LICENSE patch_title.py patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install /tmp/aur-repo/
           git -C /tmp/aur-repo rm --ignore-unmatch -f patch-droid.py
           git -C /tmp/aur-repo rm --ignore-unmatch -f patch-title.py
@@ -167,7 +168,6 @@ jobs:
           cd /tmp/aur-repo
           git config user.name "$AUR_USERNAME"
           git config user.email "$AUR_EMAIL"
-          git checkout -B master origin/master
           git add PKGBUILD .SRCINFO LICENSE patch_title.py patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
           if git diff --cached --quiet; then
             echo "==> AUR metadata is already current."

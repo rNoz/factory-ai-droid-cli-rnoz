@@ -58,6 +58,7 @@ def test_release_automation_uses_merge_gated_prs() -> None:
     assert "RELEASE_TOKEN repository secret is required" in publication
     assert "/commits/v${UPSTREAM_VER}" in publication
     assert "/github/workspace/PKGBUILD" not in publication
+    assert publication.index('git -C /tmp/aur-repo checkout -B master origin/master') < publication.index('cp PKGBUILD')
     assert 'git diff --cached --quiet' in publication
     assert '--target "$MERGE_SHA"' in publication
 
