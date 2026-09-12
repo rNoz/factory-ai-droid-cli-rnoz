@@ -25,6 +25,11 @@ def test_pkgrel_is_preserved_for_same_version_rebuilds() -> None:
     assert MODULE.reset_pkgrel(text, "0.217.0", "0.217.0") == text
 
 
+def test_pkgrel_increments_for_same_version_package_rebuilds() -> None:
+    text = "pkgver=0.217.0\npkgrel=2\n"
+    assert MODULE.bump_pkgrel(text) == "pkgver=0.217.0\npkgrel=3\n"
+
+
 def test_readme_has_single_license_section_and_nested_test_matrix() -> None:
     text = MODULE.README.read_text()
     assert text.count("\n## License\n") == 1
@@ -63,6 +68,9 @@ def test_release_automation_uses_merge_gated_prs() -> None:
     assert publication.index('git -C /tmp/aur-repo checkout -B master origin/master') < publication.index('cp PKGBUILD')
     assert 'git diff --cached --quiet' in publication
     assert '--target "$MERGE_SHA"' in publication
+    assert "--bump-pkgrel" in workflow
+    assert "PACKAGE_CHANGE" in workflow
+    assert "chore(release): prepare" in workflow
 
 
 def test_upgrade_notice_reports_the_installed_version() -> None:
@@ -79,6 +87,7 @@ def test_upgrade_notice_reports_the_installed_version() -> None:
 if __name__ == "__main__":
     test_pkgrel_resets_when_upstream_version_changes()
     test_pkgrel_is_preserved_for_same_version_rebuilds()
+    test_pkgrel_increments_for_same_version_package_rebuilds()
     test_readme_has_single_license_section_and_nested_test_matrix()
     test_ci_badge_uses_shields_endpoint()
     test_release_automation_uses_merge_gated_prs()
