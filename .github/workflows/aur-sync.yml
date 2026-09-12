@@ -114,8 +114,21 @@ jobs:
           echo "Upstream version: $UPSTREAM_RAW"
           echo "Current  version: $CURRENT_VER"
 
+          PACKAGE_CHANGE=false
+          if [ "${{ github.event_name }}" = "push" ] &&
+             [ "${{ github.event.before }}" != "0000000000000000000000000000000000000000" ]; then
+            COMMIT_SUBJECT=$(git log -1 --format=%s)
+            if [[ ! "$COMMIT_SUBJECT" =~ ^chore\(release\):[[:space:]]prepare[[:space:]]v ]]; then
+              if git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" |
+                 grep -Eq '^(PKGBUILD|patches/|patch_(title|keybindings)\.py$|factory-ai-droid-cli-rnoz-bin\.install$)'; then
+                PACKAGE_CHANGE=true
+              fi
+            fi
+          fi
+          echo "package_change=$PACKAGE_CHANGE" >> $GITHUB_OUTPUT
+
           if [ "$UPSTREAM_RAW" != "$CURRENT_VER" ] || [ "${{ inputs.force_build }}" = "true" ] ||
-             [ "${{ github.event_name }}" = "pull_request" ]; then
+             [ "${{ github.event_name }}" = "pull_request" ] || [ "$PACKAGE_CHANGE" = "true" ]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
           else
             echo "should_build=false" >> $GITHUB_OUTPUT
@@ -238,7 +251,7 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           UPSTREAM_VER: ${{ needs.build-and-test.outputs.upstream_version }}
         run: |
-          python3 scripts/update-release-metadata.py "${{ needs.build-and-test.outputs.upstream_version }}"
+          python3 scripts/update-release-metadata.py "${{ needs.build-and-test.outputs.upstream_version }}" --bump-pkgrel
           BRANCH="release/v${UPSTREAM_VER}"
           git switch -C "$BRANCH"
           git config user.name "github-actions[bot]"
