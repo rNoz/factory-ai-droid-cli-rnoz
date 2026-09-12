@@ -52,6 +52,13 @@ def set_pkgrel(text: str, pkgrel: int) -> str:
     return updated
 
 
+def set_pkgver(text: str, version: str) -> str:
+    updated, count = re.subn(r"^pkgver=.*$", f"pkgver={version}", text, count=1, flags=re.MULTILINE)
+    if count != 1:
+        raise RuntimeError("pkgver field not found")
+    return updated
+
+
 def update_srcinfo(text: str, version: str, pkgrel: int) -> str:
     updated, version_count = re.subn(
         r"^(\s*pkgver = ).*$", rf"\g<1>{version}", text, count=1, flags=re.MULTILINE
@@ -135,7 +142,8 @@ def main() -> int:
     current_version = re.search(r"^pkgver=(.+)$", text, re.MULTILINE)
     if not current_version:
         raise RuntimeError("pkgver field not found")
-    updated = reset_pkgrel(text, current_version.group(1), version)
+    updated = set_pkgver(text, version)
+    updated = reset_pkgrel(updated, current_version.group(1), version)
     if len(sys.argv) == 3 and current_version.group(1) == version:
         updated = bump_pkgrel(updated)
     if len(sys.argv) == 4:
@@ -147,8 +155,9 @@ def main() -> int:
         raise RuntimeError("pkgrel field not found")
     pkgrel = int(pkgrel_match.group(1))
     srcinfo_path = ROOT / ".SRCINFO"
-    if srcinfo_path.is_file():
-        srcinfo_path.write_text(update_srcinfo(srcinfo_path.read_text(), version, pkgrel))
+    if not srcinfo_path.is_file():
+        raise RuntimeError(".SRCINFO file not found")
+    srcinfo_path.write_text(update_srcinfo(srcinfo_path.read_text(), version, pkgrel))
     update_version_list(version)
     update_readme(version, pkgrel)
     return 0
