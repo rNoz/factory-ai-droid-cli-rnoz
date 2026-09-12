@@ -4,6 +4,16 @@ name: Publish merged release
   pull_request:
     branches: [ main ]
     types: [ closed ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version to republish'
+        required: true
+        type: string
+      merge_sha:
+        description: 'Merged commit SHA that owns the release tag'
+        required: true
+        type: string
 
 concurrency:
   group: factory-cli-release-publication
@@ -17,9 +27,10 @@ jobs:
   publish:
     name: publish
     if: >
-      github.event.pull_request.merged == true &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      startsWith(github.event.pull_request.head.ref, 'release/v')
+      (github.event_name == 'workflow_dispatch' && github.actor == github.repository_owner) ||
+      (github.event.pull_request.merged == true &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       startsWith(github.event.pull_request.head.ref, 'release/v'))
     runs-on: ubuntu-latest
     steps:
       - name: Verify release token is configured
@@ -34,7 +45,7 @@ jobs:
       - name: Checkout merged main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.merge_sha || github.event.pull_request.merge_commit_sha }}
           persist-credentials: false
 
       - name: Set up Python
@@ -46,8 +57,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          MERGE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.merge_sha || github.event.pull_request.merge_commit_sha }}
+          HEAD_REF: ${{ github.event_name == 'workflow_dispatch' && format('release/v{0}', inputs.version) || github.event.pull_request.head.ref }}
         run: |
           UPSTREAM_VER=$(grep -oP '^pkgver=\K.*' PKGBUILD)
           EXPECTED_BRANCH="release/v${UPSTREAM_VER}"
@@ -134,6 +145,7 @@ jobs:
             exit 0
           fi
 
+          UPSTREAM_VER=$(grep -oP '^pkgver=\K.*' PKGBUILD)
           mkdir -p ~/.ssh
           KEY_FILE="$(mktemp ~/.ssh/aur_key.XXXXXX)"
           trap 'rm -f "$KEY_FILE"' EXIT
@@ -153,7 +165,6 @@ jobs:
             cp -f SRCINFO /tmp/aur-repo/.SRCINFO
           fi
           cd /tmp/aur-repo
-          UPSTREAM_VER=$(grep -oP '^pkgver=\K.*' /github/workspace/PKGBUILD)
           git config user.name "$AUR_USERNAME"
           git config user.email "$AUR_EMAIL"
           git checkout -B master origin/master
