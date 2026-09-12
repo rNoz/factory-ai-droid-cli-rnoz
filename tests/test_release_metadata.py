@@ -51,11 +51,13 @@ def test_release_automation_uses_merge_gated_prs() -> None:
     assert '[ "${{ github.event_name }}" = "pull_request" ]' in workflow
     assert "github.event.pull_request.merged == true" in publication
     assert "github.event.pull_request.head.repo.full_name == github.repository" in publication
+    assert "workflow_dispatch" in publication
     assert "github.event.pull_request.merge_commit_sha" in publication
-    assert "ref: ${{ github.event.pull_request.merge_commit_sha }}" in publication
-    assert "MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}" in publication
+    assert "inputs.merge_sha || github.event.pull_request.merge_commit_sha" in publication
+    assert "MERGE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.merge_sha" in publication
     assert "RELEASE_TOKEN repository secret is required" in publication
     assert "/commits/v${UPSTREAM_VER}" in publication
+    assert "/github/workspace/PKGBUILD" not in publication
     assert 'git diff --cached --quiet' in publication
     assert '--target "$MERGE_SHA"' in publication
 
