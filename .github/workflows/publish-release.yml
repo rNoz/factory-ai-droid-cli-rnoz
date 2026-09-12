@@ -216,9 +216,6 @@ jobs:
           git -C /tmp/aur-repo rm --ignore-unmatch -f patch-droid.py
           git -C /tmp/aur-repo rm --ignore-unmatch -f patch-title.py
           git -C /tmp/aur-repo rm --ignore-unmatch -r -f patches
-          if [ -f SRCINFO ]; then
-            cp -f SRCINFO /tmp/aur-repo/.SRCINFO
-          fi
           cd /tmp/aur-repo
           git config user.name "$AUR_USERNAME"
           git config user.email "$AUR_EMAIL"
