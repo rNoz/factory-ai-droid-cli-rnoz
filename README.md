@@ -21,7 +21,7 @@
 1. **Zero Titling Token Waste**: Factory CLI by default fires an unconfigurable background LLM call (Claude Haiku 4.5) on the first prompt of every interactive session. In local observations this consumed an estimated ~300–500 input and ~10–25 output credits per conversation. This package enforces instant, local deterministic titling—saving API credits and eliminating initial latency while keeping terminal tab titles and session history logs intact. **AUR package: optional feature, asked interactively.**
 2. **Muscle-Memory Keybindings**: The interactive keymap rotates editor, model-cycle, and queued-message shortcuts to `Ctrl-G`, `Ctrl-P`, and `Ctrl-I`, respectively. The patch refuses unknown or conflicting upstream layouts (see [Muscle-Memory Keybindings](#muscle-memory-keybindings)). **AUR package: optional feature, asked interactively.**
 3. **Hardware-Optimal Lean Binary**: Unlike generic packages that either force AVX2 (crashing older/virtualized CPUs with `SIGILL`) or ship bloated multi-binary bundles, `factory-ai-droid-cli-rnoz-bin` inspects the host CPU at build/package time and installs **only one single binary** (`/usr/lib/factory/droid`). Modern CPUs receive the AVX2-optimized build; legacy/VM/sandbox CPUs receive the baseline build. Package size varies with upstream releases; only one architecture-specific binary is installed, with no runtime wrapper overhead.
-4. **Always Fresh & Autonomous**: Automated CI checks Factory AI upstream releases 3× daily, validates patches against multiple releases in an official Arch Linux container, and publishes updates with zero manual intervention.
+4. **Always Fresh & Autonomous**: Automated CI checks Factory AI upstream releases every few hours, validates patches against multiple releases in an official Arch Linux container, and publishes updates with zero manual intervention.
 5. **Supply Chain Security & Linters**: Every build is scanned with [aurscan](https://github.com/manticore-projects/aurscan) (`v0.9.0`, SHA-256 pinned) to guarantee clean, non-malicious packaging scripts. Code is strictly validated with `flake8`, `shellcheck`, and `shfmt`.
 6. **Clean & Lean Packaging**: Only bundles what `droid` actually requires. Includes bundled `ripgrep` with optional fallback to system `ripgrep`. Upstream binaries are fetched dynamically during installation and validated with fail-closed SHA-256 checks.
 
@@ -72,7 +72,7 @@ Or build manually from source:
 ```bash
 git clone https://github.com/rNoz/factory-ai-droid-cli-rnoz.git
 cd factory-ai-droid-cli-rnoz
-makepkg -si
+./scripts/build-local.sh -si
 ```
 
 *Provides and conflicts with `droid`, `factory-cli`, and `factory-cli-bin`.*
@@ -106,6 +106,7 @@ cd factory-ai-droid-cli-rnoz
 ├── LICENSE                               # Apache-2.0 License
 ├── scripts/
 │   ├── patch-macos.sh                    # Standalone macOS patcher with backup rotation
+│   ├── build-local.sh                    # Temporary-workspace local Arch package build
 │   ├── build-in-container.sh             # Isolated Arch Linux container build script
 │   └── fetch-changelog.py                # Upstream release notes scraper
 └── tests/
@@ -123,28 +124,8 @@ See [Verification and testing](docs/verification.md) and
 
 ### Tested releases
 
-Current package revision: `0.218.1-2`
-
-To regenerate a specific upstream version through CI, an owner can run:
-
-```bash
-gh workflow run aur-sync.yml \
-  --repo rNoz/factory-ai-droid-cli-rnoz \
-  --ref main \
-  -f upstream_version=X.Y.Z \
-  -f package_revision=N \
-  -f force_build=true
-```
-
-The resulting package version is always `X.Y.Z-N`, and CI carries that exact
-value through `PKGBUILD`, `.SRCINFO`, the README, the GitHub release, and AUR.
-Future normal upstream releases use revision `1`; package changes increment
-the current revision.
-
-If the repository already contains an exact metadata match, CI cannot create a
-meaningful zero-diff PR. For republishing an existing release or repairing AUR,
-use the owner-only publication workflow with its `aur_only` repair mode instead
-of creating an empty release PR.
+Maintainer release and rebuild procedures are documented in
+[`docs/maintainer-release.md`](docs/maintainer-release.md).
 
 | linux x86_64 avx2 | linux x86_64 |
 | :-- | :-- |

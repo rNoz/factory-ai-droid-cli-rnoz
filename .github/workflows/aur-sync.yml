@@ -154,7 +154,7 @@ jobs:
           echo "==> Running flake8 Python linter..."
           flake8 --max-line-length=120 --extend-ignore=E203 patches/ scripts/ tests/
           echo "==> Running shellcheck on shell scripts & PKGBUILD..."
-          shellcheck scripts/patch-macos.sh scripts/build-in-container.sh
+          shellcheck scripts/patch-macos.sh scripts/build-local.sh scripts/build-in-container.sh
           shellcheck -s bash factory-ai-droid-cli-rnoz-bin.install
           shellcheck -s bash -e SC2034,SC2154,SC2164 PKGBUILD
           echo "==> Verifying shell script formatting with shfmt..."
