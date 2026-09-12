@@ -20,6 +20,11 @@ name: Check Upstream, Patch & Build Factory CLI
         required: false
         default: false
         type: boolean
+      package_revision:
+        description: 'Override package revision for a maintainer-run metadata repair'
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: factory-cli-release
@@ -129,7 +134,14 @@ jobs:
           fi
           echo "package_change=$PACKAGE_CHANGE" >> $GITHUB_OUTPUT
 
-          if [ "$UPSTREAM_RAW" != "$CURRENT_VER" ]; then
+          REQUESTED_REL="${{ inputs.package_revision }}"
+          if [ -n "$REQUESTED_REL" ] && ! [[ "$REQUESTED_REL" =~ ^[1-9][0-9]*$ ]]; then
+            echo "Error: package_revision must be a positive integer." >&2
+            exit 1
+          fi
+          if [ -n "$REQUESTED_REL" ]; then
+            PACKAGE_REVISION=$REQUESTED_REL
+          elif [ "$UPSTREAM_RAW" != "$CURRENT_VER" ]; then
             PACKAGE_REVISION=1
           elif [ "$PACKAGE_CHANGE" = "true" ] || [ "${{ inputs.force_build }}" = "true" ]; then
             PACKAGE_REVISION=$((CURRENT_REL + 1))

@@ -67,6 +67,7 @@ def test_release_automation_uses_merge_gated_prs() -> None:
     workflow = WORKFLOW.read_text()
     publication = PUBLISH_WORKFLOW.read_text()
     assert "package_revision:" in workflow
+    assert "Override package revision" in workflow
     assert '--set-pkgrel "$PACKAGE_REVISION"' in workflow
     assert "GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}" in publication
     assert 'PACKAGE_VERSION="${UPSTREAM_VER}-${PKGREL}"' in publication
