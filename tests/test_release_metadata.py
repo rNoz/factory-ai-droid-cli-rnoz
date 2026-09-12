@@ -66,6 +66,8 @@ def test_ci_badge_uses_shields_endpoint() -> None:
 def test_release_automation_uses_merge_gated_prs() -> None:
     workflow = WORKFLOW.read_text()
     publication = PUBLISH_WORKFLOW.read_text()
+    assert "upstream_version:" in workflow
+    assert "Override upstream Droid version" in workflow
     assert "aur_only:" in publication
     assert "Repair AUR metadata from current main" in publication
     assert "if: inputs.aur_only != true" in publication
