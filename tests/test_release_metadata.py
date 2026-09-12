@@ -55,7 +55,7 @@ def test_ci_badge_uses_shields_endpoint() -> None:
 def test_release_automation_uses_merge_gated_prs() -> None:
     workflow = WORKFLOW.read_text()
     publication = PUBLISH_WORKFLOW.read_text()
-    assert "GH_TOKEN: ${{ github.token }}" in publication
+    assert "GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}" in publication
     assert 'PACKAGE_VERSION="${UPSTREAM_VER}-${PKGREL}"' in publication
     assert 'RELEASE_TAG="v${PACKAGE_VERSION}"' in publication
     assert 'gh release create "$RELEASE_TAG"' in publication
