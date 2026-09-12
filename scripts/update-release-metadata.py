@@ -35,6 +35,14 @@ def reset_pkgrel(text: str, current_version: str, new_version: str) -> str:
     return updated
 
 
+def bump_pkgrel(text: str) -> str:
+    match = re.search(r"^pkgrel=(\d+)$", text, re.MULTILINE)
+    if not match:
+        raise RuntimeError("pkgrel field not found")
+    next_pkgrel = int(match.group(1)) + 1
+    return text[: match.start()] + f"pkgrel={next_pkgrel}" + text[match.end() :]
+
+
 def reset_pkgrel_if_version_changed(version: str) -> None:
     text = PKGBUILD.read_text()
     match = re.search(r"^pkgver=(.+)$", text, re.MULTILINE)
@@ -85,11 +93,22 @@ def update_readme(version: str) -> None:
 
 
 def main() -> int:
-    if len(sys.argv) != 2 or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", sys.argv[1]):
-        print(f"usage: {Path(sys.argv[0]).name} VERSION", file=sys.stderr)
+    if len(sys.argv) not in (2, 3) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", sys.argv[1]):
+        print(f"usage: {Path(sys.argv[0]).name} VERSION [--bump-pkgrel]", file=sys.stderr)
         return 2
     version = sys.argv[1]
-    reset_pkgrel_if_version_changed(version)
+    if len(sys.argv) == 3 and sys.argv[2] != "--bump-pkgrel":
+        print(f"usage: {Path(sys.argv[0]).name} VERSION [--bump-pkgrel]", file=sys.stderr)
+        return 2
+    text = PKGBUILD.read_text()
+    current_version = re.search(r"^pkgver=(.+)$", text, re.MULTILINE)
+    if not current_version:
+        raise RuntimeError("pkgver field not found")
+    updated = reset_pkgrel(text, current_version.group(1), version)
+    if len(sys.argv) == 3 and current_version.group(1) == version:
+        updated = bump_pkgrel(updated)
+    if updated != text:
+        PKGBUILD.write_text(updated)
     update_version_list(version)
     update_readme(version)
     return 0
