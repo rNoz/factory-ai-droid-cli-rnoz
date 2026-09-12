@@ -118,14 +118,12 @@ jobs:
           tar -czf "factory-ai-droid-cli-rnoz-bin-${PACKAGE_VERSION}.src.tar.gz" \
             PKGBUILD .SRCINFO LICENSE patch_title.py patch_keybindings.py patches/patch_title.py patches/patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
 
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+          if ! gh release create "$RELEASE_TAG" "factory-ai-droid-cli-rnoz-bin-${PACKAGE_VERSION}.src.tar.gz" \
+            --title "Factory CLI v${PACKAGE_VERSION} (rNoz tweaks)" \
+            --notes-file /tmp/release-notes.md \
+            --target "$MERGE_SHA"; then
             gh release edit "$RELEASE_TAG" --title "Factory CLI v${PACKAGE_VERSION} (rNoz tweaks)" --notes-file /tmp/release-notes.md
             gh release upload "$RELEASE_TAG" "factory-ai-droid-cli-rnoz-bin-${PACKAGE_VERSION}.src.tar.gz" --clobber
-          else
-            gh release create "$RELEASE_TAG" "factory-ai-droid-cli-rnoz-bin-${PACKAGE_VERSION}.src.tar.gz" \
-              --title "Factory CLI v${PACKAGE_VERSION} (rNoz tweaks)" \
-              --notes-file /tmp/release-notes.md \
-              --target "$MERGE_SHA"
           fi
 
       - name: Publish to AUR (Optional)

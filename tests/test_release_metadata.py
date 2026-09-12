@@ -58,7 +58,6 @@ def test_release_automation_uses_merge_gated_prs() -> None:
     assert "GH_TOKEN: ${{ github.token }}" in publication
     assert 'PACKAGE_VERSION="${UPSTREAM_VER}-${PKGREL}"' in publication
     assert 'RELEASE_TAG="v${PACKAGE_VERSION}"' in publication
-    assert 'gh release view "$RELEASE_TAG"' in publication
     assert 'gh release create "$RELEASE_TAG"' in publication
     assert 'factory-ai-droid-cli-rnoz-bin-${PACKAGE_VERSION}.src.tar.gz' in publication
     assert "release/v${UPSTREAM_VER}" in workflow
