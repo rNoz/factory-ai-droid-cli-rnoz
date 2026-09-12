@@ -131,13 +131,20 @@ To regenerate a specific upstream version through CI, an owner can run:
 gh workflow run aur-sync.yml \
   --repo rNoz/factory-ai-droid-cli-rnoz \
   --ref main \
-  -f upstream_version=0.218.1 \
-  -f package_revision=2 \
+  -f upstream_version=X.Y.Z \
+  -f package_revision=N \
   -f force_build=true
 ```
 
-CI carries that single `pkgver-pkgrel` value through `PKGBUILD`, `.SRCINFO`,
-the README, the GitHub release, and AUR.
+The resulting package version is always `X.Y.Z-N`, and CI carries that exact
+value through `PKGBUILD`, `.SRCINFO`, the README, the GitHub release, and AUR.
+Future normal upstream releases use revision `1`; package changes increment
+the current revision.
+
+If the repository already contains an exact metadata match, CI cannot create a
+meaningful zero-diff PR. For republishing an existing release or repairing AUR,
+use the owner-only publication workflow with its `aur_only` repair mode instead
+of creating an empty release PR.
 
 | linux x86_64 avx2 | linux x86_64 |
 | :-- | :-- |

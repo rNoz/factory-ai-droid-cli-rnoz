@@ -2,6 +2,7 @@
 set -euo pipefail
 
 UPSTREAM_VER="$1"
+PACKAGE_REVISION="${2:-1}"
 
 echo "==> Updating pacman and installing dependencies..."
 pacman -Syu --noconfirm git python curl
@@ -14,8 +15,8 @@ chown -R builduser:builduser /build
 
 cd /build
 
-echo "==> Updating PKGBUILD version to ${UPSTREAM_VER}..."
-sed -i -e "s/^pkgver=.*/pkgver=${UPSTREAM_VER}/" -e "s/^pkgrel=.*/pkgrel=1/" PKGBUILD
+echo "==> Updating PKGBUILD version to ${UPSTREAM_VER}-${PACKAGE_REVISION}..."
+sed -i -e "s/^pkgver=.*/pkgver=${UPSTREAM_VER}/" -e "s/^pkgrel=.*/pkgrel=${PACKAGE_REVISION}/" PKGBUILD
 
 echo "==> Updating .SRCINFO..."
 su builduser -c "makepkg --printsrcinfo > .SRCINFO"
@@ -30,6 +31,5 @@ python3 patches/patch_title.py /usr/lib/factory/droid --check
 
 echo "==> Copying built package back to workspace..."
 cp factory-ai-droid-cli-rnoz-bin-*.pkg.tar.zst PKGBUILD .SRCINFO /github/workspace/
-cp .SRCINFO /github/workspace/SRCINFO
-chmod 644 /github/workspace/factory-ai-droid-cli-rnoz-bin-*.pkg.tar.zst /github/workspace/PKGBUILD /github/workspace/.SRCINFO /github/workspace/SRCINFO
+chmod 644 /github/workspace/factory-ai-droid-cli-rnoz-bin-*.pkg.tar.zst /github/workspace/PKGBUILD /github/workspace/.SRCINFO
 echo "==> Arch Linux container build and smoke test completed successfully!"

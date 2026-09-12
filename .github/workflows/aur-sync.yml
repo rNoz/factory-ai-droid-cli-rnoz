@@ -2,8 +2,8 @@ name: Check Upstream, Patch & Build Factory CLI
 
 'on':
   schedule:
-    # Check 3x daily (06:00, 14:00, 22:00 UTC) - takes <10s CPU if version is unchanged
-    - cron: '0 6,14,22 * * *'
+    # Check every four hours; unchanged scheduled runs stop before setup.
+    - cron: '0 */4 * * *'
   push:
     branches: [ main ]
     paths-ignore:
@@ -31,8 +31,8 @@ name: Check Upstream, Patch & Build Factory CLI
         type: string
 
 concurrency:
-  group: factory-cli-release
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('factory-cli-pr-{0}', github.event.pull_request.number) || 'factory-cli-release' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -49,6 +49,7 @@ jobs:
       issues: write
     outputs:
       should_build: ${{ steps.check_version.outputs.should_build }}
+      run_ci: ${{ steps.check_version.outputs.run_ci }}
       upstream_version: ${{ steps.check_version.outputs.upstream_version }}
       package_revision: ${{ steps.check_version.outputs.package_revision }}
     steps:
@@ -66,71 +67,23 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: '3.12'
-
-      - name: Install Python & Shell Linters
-        run: |
-          pip install flake8
-          sudo apt-get update -qq && sudo apt-get install -qq -y shellcheck shfmt
-
-      - name: Run static linters and format checks
-        run: |
-          echo "==> Validating Python syntax & bytecode..."
-          python3 -m py_compile patches/*.py scripts/*.py tests/*.py
-          echo "==> Running flake8 Python linter..."
-          flake8 --max-line-length=120 --extend-ignore=E203 patches/ scripts/ tests/
-          echo "==> Running shellcheck on shell scripts & PKGBUILD..."
-          shellcheck scripts/patch-macos.sh scripts/build-in-container.sh
-          shellcheck -s bash factory-ai-droid-cli-rnoz-bin.install
-          shellcheck -s bash -e SC2034,SC2154,SC2164 PKGBUILD
-          echo "==> Verifying shell script formatting with shfmt..."
-          shfmt -i 2 -ci -d scripts/ factory-ai-droid-cli-rnoz-bin.install
-
-      - name: Run security audit via aurscan
-        run: |
-          echo "==> Fetching pinned aurscan v0.9.0 security scanner..."
-          sudo curl -fsSL https://github.com/manticore-projects/aurscan/releases/download/v0.9.0/aurscan-linux-amd64 -o /usr/local/bin/aurscan
-          echo "07659ff14b7f416a8aaf254175138ed464947922d483081f837dc41a2e2424c5  /usr/local/bin/aurscan" | sha256sum -c
-          sudo chmod +x /usr/local/bin/aurscan
-          echo "==> Running static rule security audit on repository..."
-          aurscan --rules-only .
-
-      - name: Run offline synthetic fixtures & breakage simulations
-        run: |
-          echo "==> Running offline synthetic patcher fixtures..."
-          python3 tests/test_versions.py --offline
-          echo "==> Running keybinding rotation fixture tests..."
-          python3 tests/test_keybindings.py
-          echo "==> Running breakage & recovery simulation suite..."
-          python3 tests/simulate_breakage.py
-          echo "==> Running release metadata regression tests..."
-          python3 tests/test_release_metadata.py
-
       - name: Detect and validate upstream Factory CLI version
         id: check_version
         run: |
-          UPSTREAM_RAW=$(curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused "https://app.factory.ai/cli" | grep -oP 'VER="\K[0-9]+\.[0-9]+\.[0-9]+' || true)
-          if [[ ! "$UPSTREAM_RAW" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Error: Failed to fetch a valid semantic version from upstream endpoint" >&2
-            exit 1
+          if [ -n "${{ inputs.upstream_version }}" ]; then
+            UPSTREAM_RAW=$(python3 scripts/check-upstream-version.py --override "${{ inputs.upstream_version }}")
+          else
+            UPSTREAM_RAW=$(python3 scripts/check-upstream-version.py)
           fi
 
-          REQUESTED_VERSION="${{ inputs.upstream_version }}"
-          if [ -n "$REQUESTED_VERSION" ] && ! [[ "$REQUESTED_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Error: upstream_version must be a semantic version." >&2
-            exit 1
-          fi
-          TARGET_VERSION="${REQUESTED_VERSION:-$UPSTREAM_RAW}"
-          echo "upstream_version=$TARGET_VERSION" >> $GITHUB_OUTPUT
+          TARGET_VERSION="$UPSTREAM_RAW"
           CURRENT_VER=$(grep -oP '^pkgver=\K.*' PKGBUILD)
           CURRENT_REL=$(grep -oP '^pkgrel=\K.*' PKGBUILD)
+          echo "upstream_version=$TARGET_VERSION" >> $GITHUB_OUTPUT
           echo "current_version=$CURRENT_VER" >> $GITHUB_OUTPUT
           echo "Official upstream version: $UPSTREAM_RAW"
           echo "Target package version: $TARGET_VERSION"
-          echo "Current  version: $CURRENT_VER"
+          echo "Current package version: $CURRENT_VER-$CURRENT_REL"
 
           PACKAGE_CHANGE=false
           if [ "${{ github.event_name }}" = "push" ] &&
@@ -161,6 +114,16 @@ jobs:
           fi
           echo "package_revision=$PACKAGE_REVISION" >> $GITHUB_OUTPUT
 
+          RUN_CI=true
+          if [ "${{ github.event_name }}" = "schedule" ] &&
+             [ "$TARGET_VERSION" = "$CURRENT_VER" ] &&
+             [ "${{ inputs.force_build }}" != "true" ] &&
+             [ -z "$REQUESTED_REL" ]; then
+            RUN_CI=false
+            echo "Scheduled run found no upstream change; skipping validation and build."
+          fi
+          echo "run_ci=$RUN_CI" >> $GITHUB_OUTPUT
+
           if [ "$TARGET_VERSION" != "$CURRENT_VER" ] || [ "${{ inputs.force_build }}" = "true" ] ||
              [ "${{ github.event_name }}" = "pull_request" ] || [ "$PACKAGE_CHANGE" = "true" ] ||
              [ -n "$REQUESTED_REL" ]; then
@@ -169,6 +132,54 @@ jobs:
             echo "should_build=false" >> $GITHUB_OUTPUT
             echo "Version is up to date ($CURRENT_VER). No build needed."
           fi
+
+      - name: Set up Python
+        if: steps.check_version.outputs.run_ci == 'true'
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+
+      - name: Install Python & Shell Linters
+        if: steps.check_version.outputs.run_ci == 'true'
+        run: |
+          pip install flake8
+          sudo apt-get update -qq && sudo apt-get install -qq -y shellcheck shfmt
+
+      - name: Run static linters and format checks
+        if: steps.check_version.outputs.run_ci == 'true'
+        run: |
+          echo "==> Validating Python syntax & bytecode..."
+          python3 -m py_compile patches/*.py scripts/*.py tests/*.py
+          echo "==> Running flake8 Python linter..."
+          flake8 --max-line-length=120 --extend-ignore=E203 patches/ scripts/ tests/
+          echo "==> Running shellcheck on shell scripts & PKGBUILD..."
+          shellcheck scripts/patch-macos.sh scripts/build-in-container.sh
+          shellcheck -s bash factory-ai-droid-cli-rnoz-bin.install
+          shellcheck -s bash -e SC2034,SC2154,SC2164 PKGBUILD
+          echo "==> Verifying shell script formatting with shfmt..."
+          shfmt -i 2 -ci -d scripts/ factory-ai-droid-cli-rnoz-bin.install
+
+      - name: Run security audit via aurscan
+        if: steps.check_version.outputs.run_ci == 'true'
+        run: |
+          echo "==> Fetching pinned aurscan v0.9.0 security scanner..."
+          sudo curl -fsSL https://github.com/manticore-projects/aurscan/releases/download/v0.9.0/aurscan-linux-amd64 -o /usr/local/bin/aurscan
+          echo "07659ff14b7f416a8aaf254175138ed464947922d483081f837dc41a2e2424c5  /usr/local/bin/aurscan" | sha256sum -c
+          sudo chmod +x /usr/local/bin/aurscan
+          echo "==> Running static rule security audit on repository..."
+          aurscan --rules-only .
+
+      - name: Run offline synthetic fixtures & breakage simulations
+        if: steps.check_version.outputs.run_ci == 'true'
+        run: |
+          echo "==> Running offline synthetic patcher fixtures..."
+          python3 tests/test_versions.py --offline
+          echo "==> Running keybinding rotation fixture tests..."
+          python3 tests/test_keybindings.py
+          echo "==> Running breakage & recovery simulation suite..."
+          python3 tests/simulate_breakage.py
+          echo "==> Running release metadata regression tests..."
+          python3 tests/test_release_metadata.py
 
       - name: Run multi-version patcher validation
         if: steps.check_version.outputs.should_build == 'true'
@@ -182,7 +193,7 @@ jobs:
           docker run --rm \
             -v "$GITHUB_WORKSPACE":/github/workspace \
             archlinux@sha256:61f7de2dd88cc4ba1fe36c24cfe1a503c3936984492d6405eeab013ce6ac68c5 \
-            /github/workspace/scripts/build-in-container.sh "${{ steps.check_version.outputs.upstream_version }}"
+            /github/workspace/scripts/build-in-container.sh "${{ steps.check_version.outputs.upstream_version }}" "${{ steps.check_version.outputs.package_revision }}"
 
       - name: Upload packaging metadata
         if: steps.check_version.outputs.should_build == 'true'
@@ -193,13 +204,17 @@ jobs:
           path: |
             PKGBUILD
             .SRCINFO
-            SRCINFO
 
       - name: Report upstream breakage on failure
-        if: failure() && github.ref == 'refs/heads/main'
+        if: >
+          failure() &&
+          github.ref == 'refs/heads/main' &&
+          steps.check_version.outcome == 'success' &&
+          steps.check_version.outputs.run_ci == 'true' &&
+          steps.check_version.outputs.should_build == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          UPSTREAM_VER: ${{ steps.check_version.outputs.upstream_version || 'unknown' }}
+          UPSTREAM_VER: ${{ steps.check_version.outputs.upstream_version }}
         run: |
           echo "==> Build/test failed on main branch. Triggering breakage alerts..."
 
@@ -269,12 +284,6 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: package-metadata-${{ needs.build-and-test.outputs.upstream_version }}
-
-      - name: Restore metadata dotfiles
-        run: |
-          if [ -f SRCINFO ]; then
-            cp -f SRCINFO .SRCINFO
-          fi
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7

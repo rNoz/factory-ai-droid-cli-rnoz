@@ -14,6 +14,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / "scripts/update-release-metadata.
 DETECTOR = Path(__file__).resolve().parents[1] / "scripts/check-upstream-version.py"
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/aur-sync.yml"
 PUBLISH_WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/publish-release.yml"
+CONTAINER = Path(__file__).resolve().parents[1] / "scripts/build-in-container.sh"
 INSTALL = Path(__file__).resolve().parents[1] / "factory-ai-droid-cli-rnoz-bin.install"
 SPEC = importlib.util.spec_from_file_location("update_release_metadata", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -224,6 +225,73 @@ def test_release_repair_guards_are_pinned() -> None:
     assert "skipping AUR publish to avoid regressing AUR" in publication
 
 
+def test_container_builds_the_calculated_package_revision() -> None:
+    container = CONTAINER.read_text()
+    workflow = WORKFLOW.read_text()
+    assert 'PACKAGE_REVISION="${2:-1}"' in container
+    assert "pkgrel=${PACKAGE_REVISION}" in container
+    invocation = (
+        'build-in-container.sh "${{ steps.check_version.outputs.upstream_version }}" '
+        '"${{ steps.check_version.outputs.package_revision }}"'
+    )
+    assert invocation in workflow
+
+
+def test_scheduled_checks_gate_expensive_setup_early() -> None:
+    workflow = WORKFLOW.read_text()
+    assert "cron: '0 */4 * * *'" in workflow
+    assert workflow.index("id: check_version") < workflow.index("name: Set up Python")
+    assert "run_ci:" in workflow
+    for expensive_step in (
+        "name: Set up Python",
+        "name: Install Python & Shell Linters",
+        "name: Run static linters and format checks",
+        "name: Run security audit via aurscan",
+        "name: Run offline synthetic fixtures & breakage simulations",
+    ):
+        step_start = workflow.index(expensive_step)
+        assert "if: steps.check_version.outputs.run_ci == 'true'" in workflow[step_start : step_start + 500]
+    assert "Scheduled run found no upstream change; skipping validation and build." in workflow
+
+
+def test_release_concurrency_and_failure_reporting_are_scoped() -> None:
+    workflow = WORKFLOW.read_text()
+    assert "format('factory-cli-pr-{0}', github.event.pull_request.number)" in workflow
+    assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in workflow
+    assert "steps.check_version.outcome == 'success'" in workflow
+    assert "steps.check_version.outputs.run_ci == 'true'" in workflow
+    assert "steps.check_version.outputs.should_build == 'true'" in workflow
+    assert "UPSTREAM_VER: ${{ steps.check_version.outputs.upstream_version || 'unknown' }}" not in workflow
+
+
+def test_publication_uses_healed_metadata_without_dead_copy_paths() -> None:
+    publication = PUBLISH_WORKFLOW.read_text()
+    assert 'PACKAGE_VERSION="${UPSTREAM_VER}-${PKGREL}"' in publication
+    assert "pkgver/pkgrel fields not found" in publication
+    assert "git diff --quiet FETCH_HEAD HEAD -- PKGBUILD .SRCINFO" in publication
+    assert "skipping AUR publish to avoid regressing AUR" in publication
+    assert "if [ -f SRCINFO ]; then" not in publication
+
+
+def test_reproducible_release_regeneration_is_documented() -> None:
+    readme = MODULE.README.read_text()
+    verification = (MODULE.ROOT / "docs/verification.md").read_text()
+    command = "gh workflow run aur-sync.yml"
+    for text in (readme, verification):
+        assert command in text
+        assert "--repo rNoz/factory-ai-droid-cli-rnoz" in text
+        assert "-f upstream_version=X.Y.Z" in text
+        assert "-f package_revision=N" in text
+        assert "-f force_build=true" in text
+        assert "X.Y.Z-N" in text
+    combined = readme + verification
+    assert "meaningful zero-diff PR" in combined
+    assert "owner-only" in combined
+    combined = combined.lower()
+    assert "future normal upstream releases use revision `1`" in combined
+    assert "package changes increment the current revision" in combined
+
+
 if __name__ == "__main__":
     test_upstream_detector_parses_first_semantic_ver()
     test_upstream_detector_rejects_missing_or_malformed_ver()
@@ -243,4 +311,9 @@ if __name__ == "__main__":
     test_upgrade_notice_reports_the_installed_version()
     test_metadata_agrees_on_version_and_revision()
     test_release_repair_guards_are_pinned()
+    test_container_builds_the_calculated_package_revision()
+    test_scheduled_checks_gate_expensive_setup_early()
+    test_release_concurrency_and_failure_reporting_are_scoped()
+    test_publication_uses_healed_metadata_without_dead_copy_paths()
+    test_reproducible_release_regeneration_is_documented()
     print("ALL RELEASE METADATA TESTS PASSED")
