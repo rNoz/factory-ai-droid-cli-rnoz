@@ -31,6 +31,16 @@ def test_pkgrel_increments_for_same_version_package_rebuilds() -> None:
     assert MODULE.bump_pkgrel(text) == "pkgver=0.217.0\npkgrel=3\n"
 
 
+def test_pkgrel_can_be_set_for_release_metadata() -> None:
+    text = "pkgver=0.217.0\npkgrel=1\n"
+    assert MODULE.set_pkgrel(text, 3) == "pkgver=0.217.0\npkgrel=3\n"
+
+
+def test_srcinfo_revision_tracks_package_metadata() -> None:
+    text = "pkgver = 0.217.0\npkgrel = 1\n"
+    assert MODULE.update_srcinfo(text, "0.217.0", 3) == "pkgver = 0.217.0\npkgrel = 3\n"
+
+
 def test_pkgbuild_checksums_match_packaged_sources() -> None:
     text = MODULE.PKGBUILD.read_text()
     for filename in ("patch_keybindings.py", "factory-ai-droid-cli-rnoz-bin.install"):
@@ -44,6 +54,7 @@ def test_readme_has_single_license_section_and_nested_test_matrix() -> None:
     assert text.count("\n## Unofficial status and licensing\n") == 0
     assert text.count("\n### Tested releases\n") == 1
     assert text.index("## Verification and engineering") < text.index("### Tested releases")
+    assert "Current package revision:" in text
 
 
 def test_ci_badge_uses_shields_endpoint() -> None:
@@ -55,6 +66,8 @@ def test_ci_badge_uses_shields_endpoint() -> None:
 def test_release_automation_uses_merge_gated_prs() -> None:
     workflow = WORKFLOW.read_text()
     publication = PUBLISH_WORKFLOW.read_text()
+    assert "package_revision:" in workflow
+    assert '--set-pkgrel "$PACKAGE_REVISION"' in workflow
     assert "GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}" in publication
     assert 'PACKAGE_VERSION="${UPSTREAM_VER}-${PKGREL}"' in publication
     assert 'RELEASE_TAG="v${PACKAGE_VERSION}"' in publication
@@ -80,7 +93,7 @@ def test_release_automation_uses_merge_gated_prs() -> None:
     assert publication.index('git -C /tmp/aur-repo checkout -B master origin/master') < publication.index('cp PKGBUILD')
     assert 'git diff --cached --quiet' in publication
     assert '--target "$MERGE_SHA"' in publication
-    assert "--bump-pkgrel" in workflow
+    assert '--set-pkgrel "$PACKAGE_REVISION"' in workflow
     assert "PACKAGE_CHANGE" in workflow
     assert "chore(release): prepare" in workflow
 
@@ -100,6 +113,8 @@ if __name__ == "__main__":
     test_pkgrel_resets_when_upstream_version_changes()
     test_pkgrel_is_preserved_for_same_version_rebuilds()
     test_pkgrel_increments_for_same_version_package_rebuilds()
+    test_pkgrel_can_be_set_for_release_metadata()
+    test_srcinfo_revision_tracks_package_metadata()
     test_pkgbuild_checksums_match_packaged_sources()
     test_readme_has_single_license_section_and_nested_test_matrix()
     test_ci_badge_uses_shields_endpoint()
