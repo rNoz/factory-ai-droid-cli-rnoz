@@ -55,6 +55,11 @@ def test_ci_badge_uses_shields_endpoint() -> None:
 def test_release_automation_uses_merge_gated_prs() -> None:
     workflow = WORKFLOW.read_text()
     publication = PUBLISH_WORKFLOW.read_text()
+    assert 'PACKAGE_VERSION="${UPSTREAM_VER}-${PKGREL}"' in publication
+    assert 'RELEASE_TAG="v${PACKAGE_VERSION}"' in publication
+    assert 'gh release view "$RELEASE_TAG"' in publication
+    assert 'gh release create "$RELEASE_TAG"' in publication
+    assert 'factory-ai-droid-cli-rnoz-bin-${PACKAGE_VERSION}.src.tar.gz' in publication
     assert "release/v${UPSTREAM_VER}" in workflow
     assert "secrets.RELEASE_TOKEN" in workflow
     assert "RELEASE_TOKEN repository secret is required" in workflow
@@ -71,7 +76,7 @@ def test_release_automation_uses_merge_gated_prs() -> None:
     assert "inputs.merge_sha || github.event.pull_request.merge_commit_sha" in publication
     assert "MERGE_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.merge_sha" in publication
     assert "RELEASE_TOKEN repository secret is required" in publication
-    assert "/commits/v${UPSTREAM_VER}" in publication
+    assert 'commits/$RELEASE_TAG' in publication
     assert "/github/workspace/PKGBUILD" not in publication
     assert publication.index('git -C /tmp/aur-repo checkout -B master origin/master') < publication.index('cp PKGBUILD')
     assert 'git diff --cached --quiet' in publication
