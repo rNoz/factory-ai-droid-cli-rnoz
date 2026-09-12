@@ -61,14 +61,17 @@ jobs:
           HEAD_REF: ${{ github.event_name == 'workflow_dispatch' && format('release/v{0}', inputs.version) || github.event.pull_request.head.ref }}
         run: |
           UPSTREAM_VER=$(grep -oP '^pkgver=\K.*' PKGBUILD)
+          PKGREL=$(grep -oP '^pkgrel=\K.*' PKGBUILD)
+          PACKAGE_VERSION="${UPSTREAM_VER}-${PKGREL}"
+          RELEASE_TAG="v${PACKAGE_VERSION}"
           EXPECTED_BRANCH="release/v${UPSTREAM_VER}"
           if [ "$HEAD_REF" != "$EXPECTED_BRANCH" ]; then
             echo "::error::Merged release branch does not match PKGBUILD version."
             exit 1
           fi
 
-          if gh release view "v${UPSTREAM_VER}" >/dev/null 2>&1; then
-            TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/commits/v${UPSTREAM_VER}" --jq '.sha')
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            TAG_SHA=$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq '.sha')
             if [ "$TAG_SHA" != "$MERGE_SHA" ]; then
               echo "::error::Existing release tag points to $TAG_SHA, expected $MERGE_SHA."
               exit 1
@@ -78,7 +81,7 @@ jobs:
           python3 scripts/fetch-changelog.py "$UPSTREAM_VER" > /tmp/upstream-notes.md
 
           cat << 'EOF' > /tmp/release-notes.md
-          ## Factory CLI v${UPSTREAM_VER} (rNoz tweaks)
+          ## Factory CLI v${PACKAGE_VERSION} (rNoz tweaks)
 
           ### Upstream Changes & Release Notes
           __UPSTREAM_NOTES__
@@ -111,6 +114,7 @@ jobs:
           EOF
           sed -i 's/^          //' /tmp/release-notes.md
           sed -i "s/\${UPSTREAM_VER}/$UPSTREAM_VER/g" /tmp/release-notes.md
+          sed -i "s/\${PACKAGE_VERSION}/$PACKAGE_VERSION/g" /tmp/release-notes.md
           python3 -c '
           with open("/tmp/upstream-notes.md", "r") as f:
               notes = f.read()
@@ -120,15 +124,15 @@ jobs:
               f.write(content.replace("__UPSTREAM_NOTES__", notes))
           '
 
-          tar -czf "factory-ai-droid-cli-rnoz-bin-${UPSTREAM_VER}.src.tar.gz" \
+          tar -czf "factory-ai-droid-cli-rnoz-bin-${PACKAGE_VERSION}.src.tar.gz" \
             PKGBUILD .SRCINFO LICENSE patch_title.py patch_keybindings.py patches/patch_title.py patches/patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
 
-          if gh release view "v${UPSTREAM_VER}" >/dev/null 2>&1; then
-            gh release edit "v${UPSTREAM_VER}" --title "Factory CLI v${UPSTREAM_VER} (rNoz tweaks)" --notes-file /tmp/release-notes.md
-            gh release upload "v${UPSTREAM_VER}" "factory-ai-droid-cli-rnoz-bin-${UPSTREAM_VER}.src.tar.gz" --clobber
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --title "Factory CLI v${PACKAGE_VERSION} (rNoz tweaks)" --notes-file /tmp/release-notes.md
+            gh release upload "$RELEASE_TAG" "factory-ai-droid-cli-rnoz-bin-${PACKAGE_VERSION}.src.tar.gz" --clobber
           else
-            gh release create "v${UPSTREAM_VER}" "factory-ai-droid-cli-rnoz-bin-${UPSTREAM_VER}.src.tar.gz" \
-              --title "Factory CLI v${UPSTREAM_VER} (rNoz tweaks)" \
+            gh release create "$RELEASE_TAG" "factory-ai-droid-cli-rnoz-bin-${PACKAGE_VERSION}.src.tar.gz" \
+              --title "Factory CLI v${PACKAGE_VERSION} (rNoz tweaks)" \
               --notes-file /tmp/release-notes.md \
               --target "$MERGE_SHA"
           fi
@@ -146,6 +150,8 @@ jobs:
           fi
 
           UPSTREAM_VER=$(grep -oP '^pkgver=\K.*' PKGBUILD)
+          PKGREL=$(grep -oP '^pkgrel=\K.*' PKGBUILD)
+          PACKAGE_VERSION="${UPSTREAM_VER}-${PKGREL}"
           mkdir -p ~/.ssh
           KEY_FILE="$(mktemp ~/.ssh/aur_key.XXXXXX)"
           trap 'rm -f "$KEY_FILE"' EXIT
@@ -172,7 +178,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "==> AUR metadata is already current."
           else
-            git commit -m "Update to v${UPSTREAM_VER}"
+            git commit -m "Update to v${PACKAGE_VERSION}"
             git push origin master
           fi
 
@@ -181,9 +187,11 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           UPSTREAM_VER=$(grep -oP '^pkgver=\K.*' PKGBUILD)
+          PKGREL=$(grep -oP '^pkgrel=\K.*' PKGBUILD)
+          PACKAGE_VERSION="${UPSTREAM_VER}-${PKGREL}"
           EXISTING_ISSUES=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "upstream-breakage" --state open --json number --jq '.[].number' || true)
           for issue_num in $EXISTING_ISSUES; do
             if [ -n "$issue_num" ]; then
-              gh issue close "$issue_num" --repo "$GITHUB_REPOSITORY" --comment "Resolved automatically by successful release v${UPSTREAM_VER}." || true
+              gh issue close "$issue_num" --repo "$GITHUB_REPOSITORY" --comment "Resolved automatically by successful release v${PACKAGE_VERSION}." || true
             fi
           done
