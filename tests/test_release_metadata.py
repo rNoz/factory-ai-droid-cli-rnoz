@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
 import importlib.util
+import subprocess
 from pathlib import Path
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/update-release-metadata.py"
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/aur-sync.yml"
 PUBLISH_WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/publish-release.yml"
+INSTALL = Path(__file__).resolve().parents[1] / "factory-ai-droid-cli-rnoz-bin.install"
 SPEC = importlib.util.spec_from_file_location("update_release_metadata", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
@@ -63,10 +65,22 @@ def test_release_automation_uses_merge_gated_prs() -> None:
     assert '--target "$MERGE_SHA"' in publication
 
 
+def test_upgrade_notice_reports_the_installed_version() -> None:
+    result = subprocess.run(
+        ["bash", "-c", f"source {INSTALL}; post_upgrade 0.218.0 0.217.0-2"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "upgraded to version 0.218.0" in result.stdout
+    assert "upgraded to version 0.217.0-2" not in result.stdout
+
+
 if __name__ == "__main__":
     test_pkgrel_resets_when_upstream_version_changes()
     test_pkgrel_is_preserved_for_same_version_rebuilds()
     test_readme_has_single_license_section_and_nested_test_matrix()
     test_ci_badge_uses_shields_endpoint()
     test_release_automation_uses_merge_gated_prs()
+    test_upgrade_notice_reports_the_installed_version()
     print("ALL RELEASE METADATA TESTS PASSED")

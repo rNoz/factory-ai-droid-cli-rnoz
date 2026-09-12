@@ -10,7 +10,10 @@ strings (including localized chord styles). Machine kebab-case keys
 """
 
 import sys
+import tempfile
 import traceback
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "patches"))
@@ -223,6 +226,18 @@ def test_is_idempotent() -> None:
     assert patch_keybindings.apply_patch_bytes(patched) == patched
 
 
+def test_patch_report_describes_old_and_new_bindings() -> None:
+    output = StringIO()
+    with tempfile.TemporaryDirectory() as directory:
+        fixture_path = Path(directory) / "droid"
+        fixture_path.write_bytes(fixture())
+        with redirect_stdout(output):
+            assert patch_keybindings.apply_patch(fixture_path, test=False)
+    report = output.getvalue()
+    assert "Old: editor=Ctrl-P, model=Ctrl-N, queue=Ctrl-G" in report
+    assert "New: editor=Ctrl-G, model=Ctrl-P, queue=Ctrl-I" in report
+
+
 if __name__ == "__main__":
     tests = (
         test_rotates_editor_model_and_queue_bindings,
@@ -232,6 +247,7 @@ if __name__ == "__main__":
         test_refuses_partially_patched_binaries,
         test_tolerates_minified_identifier_renames,
         test_is_idempotent,
+        test_patch_report_describes_old_and_new_bindings,
     )
     failures = 0
     for test in tests:
