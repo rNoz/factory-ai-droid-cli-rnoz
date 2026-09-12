@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import hashlib
 import importlib.util
 import subprocess
 from pathlib import Path
@@ -28,6 +29,13 @@ def test_pkgrel_is_preserved_for_same_version_rebuilds() -> None:
 def test_pkgrel_increments_for_same_version_package_rebuilds() -> None:
     text = "pkgver=0.217.0\npkgrel=2\n"
     assert MODULE.bump_pkgrel(text) == "pkgver=0.217.0\npkgrel=3\n"
+
+
+def test_pkgbuild_checksums_match_packaged_sources() -> None:
+    text = MODULE.PKGBUILD.read_text()
+    for filename in ("patch_keybindings.py", "factory-ai-droid-cli-rnoz-bin.install"):
+        digest = hashlib.sha256((MODULE.ROOT / filename).read_bytes()).hexdigest()
+        assert f"'{digest}'" in text
 
 
 def test_readme_has_single_license_section_and_nested_test_matrix() -> None:
@@ -88,6 +96,7 @@ if __name__ == "__main__":
     test_pkgrel_resets_when_upstream_version_changes()
     test_pkgrel_is_preserved_for_same_version_rebuilds()
     test_pkgrel_increments_for_same_version_package_rebuilds()
+    test_pkgbuild_checksums_match_packaged_sources()
     test_readme_has_single_license_section_and_nested_test_matrix()
     test_ci_badge_uses_shields_endpoint()
     test_release_automation_uses_merge_gated_prs()
