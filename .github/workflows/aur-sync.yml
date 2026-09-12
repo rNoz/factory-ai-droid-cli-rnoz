@@ -41,6 +41,7 @@ jobs:
     outputs:
       should_build: ${{ steps.check_version.outputs.should_build }}
       upstream_version: ${{ steps.check_version.outputs.upstream_version }}
+      package_revision: ${{ steps.check_version.outputs.package_revision }}
     steps:
       - name: Verify authorized maintainer dispatch
         if: github.event_name == 'workflow_dispatch'
@@ -110,6 +111,7 @@ jobs:
 
           echo "upstream_version=$UPSTREAM_RAW" >> $GITHUB_OUTPUT
           CURRENT_VER=$(grep -oP '^pkgver=\K.*' PKGBUILD)
+          CURRENT_REL=$(grep -oP '^pkgrel=\K.*' PKGBUILD)
           echo "current_version=$CURRENT_VER" >> $GITHUB_OUTPUT
           echo "Upstream version: $UPSTREAM_RAW"
           echo "Current  version: $CURRENT_VER"
@@ -126,6 +128,15 @@ jobs:
             fi
           fi
           echo "package_change=$PACKAGE_CHANGE" >> $GITHUB_OUTPUT
+
+          if [ "$UPSTREAM_RAW" != "$CURRENT_VER" ]; then
+            PACKAGE_REVISION=1
+          elif [ "$PACKAGE_CHANGE" = "true" ] || [ "${{ inputs.force_build }}" = "true" ]; then
+            PACKAGE_REVISION=$((CURRENT_REL + 1))
+          else
+            PACKAGE_REVISION=$CURRENT_REL
+          fi
+          echo "package_revision=$PACKAGE_REVISION" >> $GITHUB_OUTPUT
 
           if [ "$UPSTREAM_RAW" != "$CURRENT_VER" ] || [ "${{ inputs.force_build }}" = "true" ] ||
              [ "${{ github.event_name }}" = "pull_request" ] || [ "$PACKAGE_CHANGE" = "true" ]; then
@@ -250,8 +261,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           UPSTREAM_VER: ${{ needs.build-and-test.outputs.upstream_version }}
+          PACKAGE_REVISION: ${{ needs.build-and-test.outputs.package_revision }}
         run: |
-          python3 scripts/update-release-metadata.py "${{ needs.build-and-test.outputs.upstream_version }}" --bump-pkgrel
+          python3 scripts/update-release-metadata.py "$UPSTREAM_VER" --set-pkgrel "$PACKAGE_REVISION"
           BRANCH="release/v${UPSTREAM_VER}"
           git switch -C "$BRANCH"
           git config user.name "github-actions[bot]"

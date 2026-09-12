@@ -43,6 +43,27 @@ def bump_pkgrel(text: str) -> str:
     return text[: match.start()] + f"pkgrel={next_pkgrel}" + text[match.end() :]
 
 
+def set_pkgrel(text: str, pkgrel: int) -> str:
+    if pkgrel < 1:
+        raise ValueError("pkgrel must be at least 1")
+    updated, count = re.subn(r"^pkgrel=\d+$", f"pkgrel={pkgrel}", text, count=1, flags=re.MULTILINE)
+    if count != 1:
+        raise RuntimeError("pkgrel field not found")
+    return updated
+
+
+def update_srcinfo(text: str, version: str, pkgrel: int) -> str:
+    updated, version_count = re.subn(
+        r"^(\s*pkgver = ).*$", rf"\g<1>{version}", text, count=1, flags=re.MULTILINE
+    )
+    updated, pkgrel_count = re.subn(
+        r"^(\s*pkgrel = ).*$", rf"\g<1>{pkgrel}", updated, count=1, flags=re.MULTILINE
+    )
+    if version_count != 1 or pkgrel_count != 1:
+        raise RuntimeError("pkgver/pkgrel fields not found in .SRCINFO")
+    return updated
+
+
 def reset_pkgrel_if_version_changed(version: str) -> None:
     text = PKGBUILD.read_text()
     match = re.search(r"^pkgver=(.+)$", text, re.MULTILINE)
@@ -72,7 +93,7 @@ def badge(version: str, architecture: str, color: str) -> str:
     return f"[![{version} {architecture}](https://img.shields.io/badge/{label}-{color})]({url})"
 
 
-def update_readme(version: str) -> None:
+def update_readme(version: str, pkgrel: int) -> None:
     text = README.read_text()
     table_start = text.index("| linux x86_64 avx2 | linux x86_64 |")
     table_end = text.find("\n\n", table_start)
@@ -89,16 +110,26 @@ def update_readme(version: str) -> None:
     )
     text = text[:table_start] + table + text[table_end:]
     text = re.sub(r"tested%20releases-[0-9]+%20", f"tested%20releases-{len(versions)}%20", text, count=1)
+    package_line = f"Current package revision: `{version}-{pkgrel}`"
+    if re.search(r"^Current package revision:.*$", text, re.MULTILINE):
+        text = re.sub(r"^Current package revision:.*$", package_line, text, count=1, flags=re.MULTILINE)
+    else:
+        text = text.replace("### Tested releases\n", f"{package_line}\n\n### Tested releases\n", 1)
     README.write_text(text)
 
 
 def main() -> int:
-    if len(sys.argv) not in (2, 3) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", sys.argv[1]):
-        print(f"usage: {Path(sys.argv[0]).name} VERSION [--bump-pkgrel]", file=sys.stderr)
+    if len(sys.argv) not in (2, 3, 4) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", sys.argv[1]):
+        print(f"usage: {Path(sys.argv[0]).name} VERSION [--bump-pkgrel|--set-pkgrel N]", file=sys.stderr)
         return 2
     version = sys.argv[1]
     if len(sys.argv) == 3 and sys.argv[2] != "--bump-pkgrel":
-        print(f"usage: {Path(sys.argv[0]).name} VERSION [--bump-pkgrel]", file=sys.stderr)
+        print(f"usage: {Path(sys.argv[0]).name} VERSION [--bump-pkgrel|--set-pkgrel N]", file=sys.stderr)
+        return 2
+    if len(sys.argv) == 4 and (
+        sys.argv[2] != "--set-pkgrel" or not sys.argv[3].isdigit() or int(sys.argv[3]) < 1
+    ):
+        print(f"usage: {Path(sys.argv[0]).name} VERSION [--bump-pkgrel|--set-pkgrel N]", file=sys.stderr)
         return 2
     text = PKGBUILD.read_text()
     current_version = re.search(r"^pkgver=(.+)$", text, re.MULTILINE)
@@ -107,10 +138,19 @@ def main() -> int:
     updated = reset_pkgrel(text, current_version.group(1), version)
     if len(sys.argv) == 3 and current_version.group(1) == version:
         updated = bump_pkgrel(updated)
+    if len(sys.argv) == 4:
+        updated = set_pkgrel(updated, int(sys.argv[3]))
     if updated != text:
         PKGBUILD.write_text(updated)
+    pkgrel_match = re.search(r"^pkgrel=(\d+)$", updated, re.MULTILINE)
+    if not pkgrel_match:
+        raise RuntimeError("pkgrel field not found")
+    pkgrel = int(pkgrel_match.group(1))
+    srcinfo_path = ROOT / ".SRCINFO"
+    if srcinfo_path.is_file():
+        srcinfo_path.write_text(update_srcinfo(srcinfo_path.read_text(), version, pkgrel))
     update_version_list(version)
-    update_readme(version)
+    update_readme(version, pkgrel)
     return 0
 
 

@@ -123,6 +123,8 @@ See [Verification and testing](docs/verification.md) and
 
 ### Tested releases
 
+Current package revision: `0.218.1-2`
+
 | linux x86_64 avx2 | linux x86_64 |
 | :-- | :-- |
 | [![0.200.0 x64 AVX2](https://img.shields.io/badge/0.200.0-x64%20AVX2-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) | [![0.200.0 x64 baseline](https://img.shields.io/badge/0.200.0-x64%20baseline-brightgreen)](https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml) |
