@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/update-release-metadata.py"
+DETECTOR = Path(__file__).resolve().parents[1] / "scripts/check-upstream-version.py"
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/aur-sync.yml"
 PUBLISH_WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/publish-release.yml"
 INSTALL = Path(__file__).resolve().parents[1] / "factory-ai-droid-cli-rnoz-bin.install"
@@ -15,6 +16,46 @@ SPEC = importlib.util.spec_from_file_location("update_release_metadata", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
 SPEC.loader.exec_module(MODULE)
+DETECTOR_SPEC = importlib.util.spec_from_file_location("check_upstream_version", DETECTOR)
+DETECTOR_MODULE = importlib.util.module_from_spec(DETECTOR_SPEC)
+assert DETECTOR_SPEC.loader is not None
+DETECTOR_SPEC.loader.exec_module(DETECTOR_MODULE)
+
+
+def test_upstream_detector_parses_first_semantic_ver() -> None:
+    text = '<script>VER="0.219.0"; VER="0.999.0"</script>'
+    assert DETECTOR_MODULE.parse_version(text) == "0.219.0"
+
+
+def test_upstream_detector_rejects_missing_or_malformed_ver() -> None:
+    for text in ('<script>VERSION="0.219.0"</script>', '<script>VER="latest"</script>'):
+        try:
+            DETECTOR_MODULE.parse_version(text)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("malformed upstream version was accepted")
+
+
+def test_upstream_detector_validates_owner_override() -> None:
+    assert DETECTOR_MODULE.validate_version("0.219.0") == "0.219.0"
+    for version in ("0.219", "v0.219.0", "0.219.0-1"):
+        try:
+            DETECTOR_MODULE.validate_version(version)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"invalid override was accepted: {version}")
+
+
+def test_upstream_detector_cli_prints_owner_override() -> None:
+    result = subprocess.run(
+        ["python3", str(DETECTOR), "--override", "0.219.0"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout == "0.219.0\n"
 
 
 def test_pkgrel_resets_when_upstream_version_changes() -> None:
