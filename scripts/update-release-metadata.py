@@ -117,11 +117,6 @@ def update_readme(version: str, pkgrel: int) -> None:
     )
     text = text[:table_start] + table + text[table_end:]
     text = re.sub(r"tested%20releases-[0-9]+%20", f"tested%20releases-{len(versions)}%20", text, count=1)
-    package_line = f"Current package revision: `{version}-{pkgrel}`"
-    if re.search(r"^Current package revision:.*$", text, re.MULTILINE):
-        text = re.sub(r"^Current package revision:.*$", package_line, text, count=1, flags=re.MULTILINE)
-    else:
-        text = text.replace("### Tested releases\n", f"{package_line}\n\n### Tested releases\n", 1)
     README.write_text(text)
 
 

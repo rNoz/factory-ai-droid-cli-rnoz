@@ -15,6 +15,8 @@ DETECTOR = Path(__file__).resolve().parents[1] / "scripts/check-upstream-version
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/aur-sync.yml"
 PUBLISH_WORKFLOW = Path(__file__).resolve().parents[1] / ".github/workflows/publish-release.yml"
 CONTAINER = Path(__file__).resolve().parents[1] / "scripts/build-in-container.sh"
+LOCAL_BUILD = Path(__file__).resolve().parents[1] / "scripts/build-local.sh"
+MAINTAINER_DOC = Path(__file__).resolve().parents[1] / "docs/maintainer-release.md"
 INSTALL = Path(__file__).resolve().parents[1] / "factory-ai-droid-cli-rnoz-bin.install"
 SPEC = importlib.util.spec_from_file_location("update_release_metadata", SCRIPT)
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -112,7 +114,7 @@ def test_standalone_metadata_update_synchronizes_all_version_fields() -> None:
         srcinfo = (root / ".SRCINFO").read_text()
         assert re.search(r"^\s*pkgver = 0.219.0$", srcinfo, re.MULTILINE)
         assert re.search(r"^\s*pkgrel = 4$", srcinfo, re.MULTILINE)
-        assert "Current package revision: `0.219.0-4`" in (root / "README.md").read_text()
+        assert "Current package revision:" not in (root / "README.md").read_text()
 
 
 def test_srcinfo_revision_tracks_package_metadata() -> None:
@@ -133,7 +135,7 @@ def test_readme_has_single_license_section_and_nested_test_matrix() -> None:
     assert text.count("\n## Unofficial status and licensing\n") == 0
     assert text.count("\n### Tested releases\n") == 1
     assert text.index("## Verification and engineering") < text.index("### Tested releases")
-    assert "Current package revision:" in text
+    assert "Current package revision:" not in text
 
 
 def test_ci_badge_uses_shields_endpoint() -> None:
@@ -203,7 +205,7 @@ def test_metadata_agrees_on_version_and_revision() -> None:
     assert re.search(rf"^\s*pkgver = {re.escape(version)}$", srcinfo, re.MULTILINE)
     assert re.search(rf"^\s*pkgrel = {pkgrel}$", srcinfo, re.MULTILINE)
     readme = MODULE.README.read_text()
-    assert f"Current package revision: `{version}-{pkgrel}`" in readme
+    assert "Current package revision:" not in readme
     versions = MODULE.configured_versions()
     assert version in versions
     assert f"[![{version} x64 AVX2]" in readme
@@ -217,7 +219,7 @@ def test_release_repair_guards_are_pinned() -> None:
     assert '[ -n "$REQUESTED_REL" ]' in workflow
     # .SRCINFO edits are package changes and must mint exactly one revision.
     assert r"\.SRCINFO$|patches/" in workflow
-    # README carries the revision line, so README pushes must be validated by CI.
+    # README changes are documentation-only and do not change package metadata.
     assert "- 'README.md'" not in workflow
     # Release assets and AUR pushes heal .SRCINFO against the checked-out PKGBUILD.
     assert "pkgver/pkgrel fields not found" in publication
@@ -255,6 +257,40 @@ def test_scheduled_checks_gate_expensive_setup_early() -> None:
     assert "Scheduled run found no upstream change; skipping validation and build." in workflow
 
 
+def test_user_docs_keep_periodicity_abstract() -> None:
+    readme = MODULE.README.read_text()
+    publication = PUBLISH_WORKFLOW.read_text()
+    assert "every few hours" in readme
+    assert "every few hours" in publication
+    assert "3× daily" not in readme
+    assert "three times daily" not in publication
+
+
+def test_release_build_instructions_are_in_maintainer_docs() -> None:
+    readme = MODULE.README.read_text()
+    verification = (MODULE.ROOT / "docs/verification.md").read_text()
+    maintainer = MAINTAINER_DOC.read_text()
+    command = "gh workflow run aur-sync.yml"
+    assert command in maintainer
+    assert command not in readme
+    assert command not in verification
+
+
+def test_local_build_uses_a_disposable_workspace() -> None:
+    script = LOCAL_BUILD.read_text()
+    assert 'mktemp -d' in script
+    assert 'trap \'rm -rf "$build_dir"\' EXIT' in script
+    assert 'makepkg "$@"' in script
+
+
+def test_container_build_does_not_copy_package_archives_to_checkout() -> None:
+    container = CONTAINER.read_text()
+    assert 'build_dir="$(mktemp -d' in container
+    assert 'trap \'rm -rf "$build_dir"\' EXIT' in container
+    assert 'cp "$build_dir"/PKGBUILD "$build_dir"/.SRCINFO /github/workspace/' in container
+    assert 'cp factory-ai-droid-cli-rnoz-bin-*.pkg.tar.zst PKGBUILD .SRCINFO /github/workspace/' not in container
+
+
 def test_release_concurrency_and_failure_reporting_are_scoped() -> None:
     workflow = WORKFLOW.read_text()
     assert "format('factory-cli-pr-{0}', github.event.pull_request.number)" in workflow
@@ -275,20 +311,17 @@ def test_publication_uses_healed_metadata_without_dead_copy_paths() -> None:
 
 
 def test_reproducible_release_regeneration_is_documented() -> None:
-    readme = MODULE.README.read_text()
-    verification = (MODULE.ROOT / "docs/verification.md").read_text()
+    maintainer = MAINTAINER_DOC.read_text()
     command = "gh workflow run aur-sync.yml"
-    for text in (readme, verification):
-        assert command in text
-        assert "--repo rNoz/factory-ai-droid-cli-rnoz" in text
-        assert "-f upstream_version=X.Y.Z" in text
-        assert "-f package_revision=N" in text
-        assert "-f force_build=true" in text
-        assert "X.Y.Z-N" in text
-    combined = readme + verification
-    assert "meaningful zero-diff PR" in combined
-    assert "owner-only" in combined
-    combined = combined.lower()
+    assert command in maintainer
+    assert "--repo rNoz/factory-ai-droid-cli-rnoz" in maintainer
+    assert "-f upstream_version=X.Y.Z" in maintainer
+    assert "-f package_revision=N" in maintainer
+    assert "-f force_build=true" in maintainer
+    assert "X.Y.Z-N" in maintainer
+    assert "meaningful zero-diff PR" in maintainer
+    assert "owner-only" in maintainer
+    combined = " ".join(maintainer.lower().split())
     assert "future normal upstream releases use revision `1`" in combined
     assert "package changes increment the current revision" in combined
 

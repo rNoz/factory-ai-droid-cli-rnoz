@@ -111,7 +111,7 @@ jobs:
           - **Zero-Waste Titling**: Neutralizes automatic background Claude Haiku 4.5 LLM titling calls on every prompt (optional).
           - **Keybinding Remap**: The default remap is editor `Ctrl-G`, model cycling `Ctrl-P`, and queued-message pull `Ctrl-I` (optional).
           - **Single Lean Binary**: Package contains only one binary compiled/chosen for the target CPU architecture.
-          - **Automatic Release Sync**: Checks Factory releases three times daily and publishes verified updates.
+          - **Automatic Release Sync**: Checks Factory releases every few hours and publishes verified updates.
           - **Platform Support**: Handles AVX2-optimized x86_64, non-AVX2 baseline x86_64, aarch64, and verified Apple Silicon macOS patching.
           - **Official Factory Changelog**: [Factory Release Notes](https://docs.factory.ai/changelog/release-notes) ([Raw Markdown](https://docs.factory.ai/changelog/release-notes.md))
           - **Clean Source Snapshot**: Distributes packaging scripts only (PKGBUILD, .SRCINFO, and patch sources). Upstream binaries are pulled directly from Factory servers by makepkg.
