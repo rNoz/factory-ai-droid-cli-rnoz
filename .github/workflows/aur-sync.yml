@@ -7,7 +7,6 @@ name: Check Upstream, Patch & Build Factory CLI
   push:
     branches: [ main ]
     paths-ignore:
-      - 'README.md'
       - '.gitignore'
       - 'LICENSE'
   pull_request:
@@ -139,7 +138,7 @@ jobs:
             COMMIT_SUBJECT=$(git log -1 --format=%s)
             if [[ ! "$COMMIT_SUBJECT" =~ ^chore\(release\):[[:space:]]prepare[[:space:]]v ]]; then
               if git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" |
-                 grep -Eq '^(PKGBUILD|patches/|patch_(title|keybindings)\.py$|factory-ai-droid-cli-rnoz-bin\.install$)'; then
+                 grep -Eq '^(PKGBUILD|\.SRCINFO$|patches/|patch_(title|keybindings)\.py$|factory-ai-droid-cli-rnoz-bin\.install$)'; then
                 PACKAGE_CHANGE=true
               fi
             fi
@@ -163,7 +162,8 @@ jobs:
           echo "package_revision=$PACKAGE_REVISION" >> $GITHUB_OUTPUT
 
           if [ "$TARGET_VERSION" != "$CURRENT_VER" ] || [ "${{ inputs.force_build }}" = "true" ] ||
-             [ "${{ github.event_name }}" = "pull_request" ] || [ "$PACKAGE_CHANGE" = "true" ]; then
+             [ "${{ github.event_name }}" = "pull_request" ] || [ "$PACKAGE_CHANGE" = "true" ] ||
+             [ -n "$REQUESTED_REL" ]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
           else
             echo "should_build=false" >> $GITHUB_OUTPUT

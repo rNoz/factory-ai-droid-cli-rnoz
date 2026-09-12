@@ -2,6 +2,7 @@
 
 import hashlib
 import importlib.util
+import re
 import subprocess
 from pathlib import Path
 
@@ -115,6 +116,37 @@ def test_upgrade_notice_reports_the_installed_version() -> None:
     assert "upgraded to version 0.217.0-2" not in result.stdout
 
 
+def test_metadata_agrees_on_version_and_revision() -> None:
+    pkgbuild = MODULE.PKGBUILD.read_text()
+    version = re.search(r"^pkgver=(.+)$", pkgbuild, re.MULTILINE).group(1)
+    pkgrel = re.search(r"^pkgrel=(\d+)$", pkgbuild, re.MULTILINE).group(1)
+    srcinfo = (MODULE.ROOT / ".SRCINFO").read_text()
+    assert re.search(rf"^\s*pkgver = {re.escape(version)}$", srcinfo, re.MULTILINE)
+    assert re.search(rf"^\s*pkgrel = {pkgrel}$", srcinfo, re.MULTILINE)
+    readme = MODULE.README.read_text()
+    assert f"Current package revision: `{version}-{pkgrel}`" in readme
+    versions = MODULE.configured_versions()
+    assert version in versions
+    assert f"[![{version} x64 AVX2]" in readme
+    assert re.search(rf"tested%20releases-{len(versions)}%20", readme)
+
+
+def test_release_repair_guards_are_pinned() -> None:
+    workflow = WORKFLOW.read_text()
+    publication = PUBLISH_WORKFLOW.read_text()
+    # An explicit package_revision dispatch always publishes, even without force_build.
+    assert '[ -n "$REQUESTED_REL" ]' in workflow
+    # .SRCINFO edits are package changes and must mint exactly one revision.
+    assert r"\.SRCINFO$|patches/" in workflow
+    # README carries the revision line, so README pushes must be validated by CI.
+    assert "- 'README.md'" not in workflow
+    # Release assets and AUR pushes heal .SRCINFO against the checked-out PKGBUILD.
+    assert "pkgver/pkgrel fields not found" in publication
+    # AUR publish refuses checkouts whose package files differ from current main.
+    assert "git diff --quiet FETCH_HEAD HEAD" in publication
+    assert "skipping AUR publish to avoid regressing AUR" in publication
+
+
 if __name__ == "__main__":
     test_pkgrel_resets_when_upstream_version_changes()
     test_pkgrel_is_preserved_for_same_version_rebuilds()
@@ -126,4 +158,6 @@ if __name__ == "__main__":
     test_ci_badge_uses_shields_endpoint()
     test_release_automation_uses_merge_gated_prs()
     test_upgrade_notice_reports_the_installed_version()
+    test_metadata_agrees_on_version_and_revision()
+    test_release_repair_guards_are_pinned()
     print("ALL RELEASE METADATA TESTS PASSED")

@@ -75,6 +75,28 @@ jobs:
             fi
           fi
 
+          # Heal .SRCINFO against the checked-out PKGBUILD so the release asset
+          # always agrees on ${PACKAGE_VERSION}, even when repairing a merge
+          # that predates revision-synchronized metadata. Self-contained so it
+          # also works on historical checkouts whose script lacks update_srcinfo.
+          python3 - "$UPSTREAM_VER" "$PKGREL" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          version, pkgrel = sys.argv[1], int(sys.argv[2])
+          text = Path(".SRCINFO").read_text()
+          updated, found_pkgver = re.subn(
+              r"^(\s*pkgver = ).*$", rf"\g<1>{version}", text, count=1, flags=re.MULTILINE
+          )
+          updated, found_pkgrel = re.subn(
+              r"^(\s*pkgrel = ).*$", rf"\g<1>{pkgrel}", updated, count=1, flags=re.MULTILINE
+          )
+          if found_pkgver != 1 or found_pkgrel != 1:
+              raise SystemExit("::error::.SRCINFO pkgver/pkgrel fields not found")
+          Path(".SRCINFO").write_text(updated)
+          PY
+
           python3 scripts/fetch-changelog.py "$UPSTREAM_VER" > /tmp/upstream-notes.md
 
           cat << 'EOF' > /tmp/release-notes.md
@@ -147,6 +169,37 @@ jobs:
           UPSTREAM_VER=$(grep -oP '^pkgver=\K.*' PKGBUILD)
           PKGREL=$(grep -oP '^pkgrel=\K.*' PKGBUILD)
           PACKAGE_VERSION="${UPSTREAM_VER}-${PKGREL}"
+
+          # Heal .SRCINFO against the checked-out PKGBUILD so AUR always
+          # receives metadata that agrees on ${PACKAGE_VERSION}. Self-contained
+          # so it also works on historical checkouts whose script lacks
+          # update_srcinfo.
+          python3 - "$UPSTREAM_VER" "$PKGREL" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          version, pkgrel = sys.argv[1], int(sys.argv[2])
+          text = Path(".SRCINFO").read_text()
+          updated, found_pkgver = re.subn(
+              r"^(\s*pkgver = ).*$", rf"\g<1>{version}", text, count=1, flags=re.MULTILINE
+          )
+          updated, found_pkgrel = re.subn(
+              r"^(\s*pkgrel = ).*$", rf"\g<1>{pkgrel}", updated, count=1, flags=re.MULTILINE
+          )
+          if found_pkgver != 1 or found_pkgrel != 1:
+              raise SystemExit("::error::.SRCINFO pkgver/pkgrel fields not found")
+          Path(".SRCINFO").write_text(updated)
+          PY
+
+          # Never regress AUR below what current main ships: skip when the
+          # checked-out package files differ from origin/main.
+          git fetch origin main --quiet
+          if ! git diff --quiet FETCH_HEAD HEAD -- PKGBUILD .SRCINFO LICENSE patch_title.py patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install; then
+            echo "::warning::Checked-out package files differ from current main; skipping AUR publish to avoid regressing AUR. Repair AUR from main with aur_only=true."
+            exit 0
+          fi
+
           mkdir -p ~/.ssh
           KEY_FILE="$(mktemp ~/.ssh/aur_key.XXXXXX)"
           trap 'rm -f "$KEY_FILE"' EXIT
