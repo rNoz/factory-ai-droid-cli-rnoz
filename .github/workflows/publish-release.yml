@@ -14,6 +14,11 @@ name: Publish merged release
         description: 'Merged commit SHA that owns the release tag'
         required: true
         type: string
+      aur_only:
+        description: 'Repair AUR metadata from current main without changing a GitHub release'
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: factory-cli-release-publication
@@ -36,7 +41,7 @@ jobs:
       - name: Checkout merged main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.merge_sha || github.event.pull_request.merge_commit_sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.aur_only && 'main' || github.event_name == 'workflow_dispatch' && inputs.merge_sha || github.event.pull_request.merge_commit_sha }}
           persist-credentials: false
 
       - name: Set up Python
@@ -45,6 +50,7 @@ jobs:
           python-version: '3.12'
 
       - name: Publish GitHub release
+        if: inputs.aur_only != true
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -172,6 +178,7 @@ jobs:
           fi
 
       - name: Close resolved breakage issues
+        if: inputs.aur_only != true
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
