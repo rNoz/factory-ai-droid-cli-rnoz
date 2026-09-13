@@ -131,7 +131,7 @@ jobs:
           python3 scripts/fetch-changelog.py "$UPSTREAM_VER" > /tmp/upstream-notes.md
 
           cat << 'EOF' > /tmp/release-notes.md
-          ## Factory CLI v${PACKAGE_VERSION} (maintainer tweaks)
+          ## Factory CLI v${PACKAGE_VERSION} (rNoz tweaks)
 
           ### Upstream Changes & Release Notes
           __UPSTREAM_NOTES__
@@ -178,10 +178,10 @@ jobs:
             PKGBUILD .SRCINFO LICENSE patch_title.py patch_keybindings.py patches/patch_title.py patches/patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
 
           if ! gh release create "$RELEASE_TAG" "factory-ai-droid-cli-rnoz-bin-${PACKAGE_VERSION}.src.tar.gz" \
-            --title "Factory CLI v${PACKAGE_VERSION} (maintainer tweaks)" \
+            --title "Factory CLI v${PACKAGE_VERSION} (rNoz tweaks)" \
             --notes-file /tmp/release-notes.md \
             --target "$MERGE_SHA"; then
-            gh release edit "$RELEASE_TAG" --title "Factory CLI v${PACKAGE_VERSION} (maintainer tweaks)" --notes-file /tmp/release-notes.md
+            gh release edit "$RELEASE_TAG" --title "Factory CLI v${PACKAGE_VERSION} (rNoz tweaks)" --notes-file /tmp/release-notes.md
             gh release upload "$RELEASE_TAG" "factory-ai-droid-cli-rnoz-bin-${PACKAGE_VERSION}.src.tar.gz" --clobber
           fi
 
