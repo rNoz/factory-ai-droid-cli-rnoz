@@ -33,8 +33,11 @@ shfmt -i 2 -ci -d scripts/ factory-ai-droid-cli-rnoz-bin.install
 aurscan --rules-only .
 ```
 
-During an interactive `makepkg`, the package asks before applying each patch
-(`Y` by default). Non-interactive builds apply both patches automatically.
+During an interactive `makepkg` or `scripts/patch-macos.sh` run, the package
+asks before applying each patch (`Y` by default). Non-interactive runs apply
+both patches automatically. The macOS script asks before removing its backup
+after a successful `--version` smoke test; non-interactive runs remove it
+automatically.
 When `rg` is already on the build host, the package reuses it instead of
 downloading a bundled duplicate; otherwise it verifies and bundles ripgrep.
 

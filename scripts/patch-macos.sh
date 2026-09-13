@@ -54,6 +54,32 @@ if [[ ! -w "$REAL_BIN" ]]; then
   exit 1
 fi
 
+INTERACTIVE=false
+if [[ -t 0 && -t 1 ]]; then
+  INTERACTIVE=true
+fi
+
+should_apply_patch() {
+  local label="$1"
+  if [[ "$INTERACTIVE" != true ]]; then
+    return 0
+  fi
+
+  local answer
+  read -r -p "Apply ${label} patch? [Y/n] " answer </dev/tty
+  [[ ! "$answer" =~ ^[Nn]$ ]]
+}
+
+apply_patch_if_requested() {
+  local label="$1"
+  local patcher="$2"
+  if should_apply_patch "$label"; then
+    python3 "$patcher" "$REAL_BIN" --test
+  else
+    echo "    Skipping ${label} patch."
+  fi
+}
+
 # Collision-resistant backup using mktemp template
 BACKUP_BIN="$(mktemp "${REAL_BIN}.bak-XXXXXXXXXX")"
 echo "==> Creating backup at: $BACKUP_BIN"
@@ -69,12 +95,26 @@ echo "==> Applying zero-waste titling and keybinding patches..."
 # Both patchers run as one guarded unit: if either fails, the backup below
 # restores the pre-patch binary (set -e would otherwise abort mid-patch
 # without the restore path).
-if python3 "$PATCHER" "$REAL_BIN" --test && python3 "$KEYBINDING_PATCHER" "$REAL_BIN" --test; then
+if apply_patch_if_requested "deterministic titling" "$PATCHER" &&
+  apply_patch_if_requested "cross-harness keybindings" "$KEYBINDING_PATCHER" &&
+  "$REAL_BIN" --version >/dev/null; then
   echo ""
   echo "==> SUCCESS: Factory CLI patched successfully!"
   echo "    Binary: $REAL_BIN"
   echo "    Backup: $BACKUP_BIN"
   echo "    Verification: '$REAL_BIN --version' passed."
+  if [[ "$INTERACTIVE" == true ]]; then
+    read -r -p "Remove backup '$BACKUP_BIN'? [Y/n] " answer </dev/tty
+    if [[ "$answer" =~ ^[Nn]$ ]]; then
+      echo "    Backup preserved at: $BACKUP_BIN"
+    else
+      rm -f "$BACKUP_BIN"
+      echo "    Backup removed."
+    fi
+  else
+    rm -f "$BACKUP_BIN"
+    echo "    Backup removed (non-interactive mode)."
+  fi
 else
   echo ""
   echo "==> ERROR: Patching failed. Restoring original binary from backup..." >&2
