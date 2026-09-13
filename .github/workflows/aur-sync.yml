@@ -315,7 +315,7 @@ jobs:
               --title "chore(release): prepare v${UPSTREAM_VER}" \
               --body "Automated release preparation for Factory CLI v${UPSTREAM_VER}. CI validation runs before auto-merge.")
           fi
-          gh pr merge "$PR_URL" --auto --rebase --delete-branch
+          gh pr merge "$PR_URL" --auto --squash --delete-branch
 
   refresh-release-pr:
     name: refresh release pull request
@@ -361,5 +361,5 @@ jobs:
             git push \
               --force-with-lease="refs/heads/$BRANCH:$OLD_SHA" \
               origin "HEAD:refs/heads/$BRANCH"
-            gh pr merge "$PR_URL" --auto --rebase --delete-branch
+            gh pr merge "$PR_URL" --auto --squash --delete-branch
           done
