@@ -49,6 +49,37 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Verify AUR availability before announcing release
+        if: inputs.aur_only != true
+        env:
+          AUR_PKG_NAME: ${{ vars.AUR_PKG_NAME || 'factory-ai-droid-cli-rnoz-bin' }}
+        run: |
+          python3 - "$AUR_PKG_NAME" <<'PY'
+          import json
+          import subprocess
+          import sys
+
+          package = sys.argv[1]
+          result = subprocess.run(
+              [
+                  "curl",
+                  "--fail",
+                  "--silent",
+                  "--show-error",
+                  "--retry",
+                  "3",
+                  f"https://aur.archlinux.org/rpc/v5/info/{package}",
+              ],
+              check=True,
+              capture_output=True,
+              text=True,
+          )
+          payload = json.loads(result.stdout)
+          if payload.get("resultcount", 0) < 1:
+              raise SystemExit(f"::error::AUR package {package} is not available")
+          print(f"==> Verified AUR availability for {package}.")
+          PY
+
       - name: Publish GitHub release
         if: inputs.aur_only != true
         env:
@@ -129,7 +160,7 @@ jobs:
           ```
 
           ### Build Notification
-          Successfully built and smoke-tested in the Arch Linux container. AUR publication is attempted separately when configured; verify AUR availability before announcing the update.
+          @rNoz — Successfully built and smoke-tested in the Arch Linux container. AUR availability was verified before announcing this release; publication is attempted separately when configured.
           EOF
           sed -i 's/^          //' /tmp/release-notes.md
           sed -i "s/\${UPSTREAM_VER}/$UPSTREAM_VER/g" /tmp/release-notes.md
