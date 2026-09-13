@@ -23,3 +23,11 @@ __pycache__/
 .overlay/
 .tokensave/
 .privacy-audit/
+**/AGENTS.local.md
+**/CLAUDE.local.md
+**/GEMINI.local.md
+**/COPILOT.local.md
+**/CODEX.local.md
+**/.env
+**/.env.*
+!**/.env.example
