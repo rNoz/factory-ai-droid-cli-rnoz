@@ -1,4 +1,4 @@
-# Factory.ai Droid CLI (rNoz tweaks)
+# Factory.ai Droid CLI (maintainer tweaks)
 
 <div align="center">
 

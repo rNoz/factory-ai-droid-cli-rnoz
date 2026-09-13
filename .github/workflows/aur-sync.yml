@@ -239,7 +239,7 @@ jobs:
           - **Upstream Binary Base**: `https://downloads.factory.ai/factory-cli/releases/`
 
           ### Maintainer Alert
-          cc @rNoz — Automated build verification failed for upstream release `v${UPSTREAM_VER}`. Manual inspection required.
+          Automated build verification failed for upstream release `v${UPSTREAM_VER}`. Manual inspection required.
           EOF
             sed -i 's/^          //' /tmp/issue-body.md
             sed -i "s/\${UPSTREAM_VER}/$UPSTREAM_VER/g" /tmp/issue-body.md
@@ -251,7 +251,6 @@ jobs:
             gh issue create --repo "$GITHUB_REPOSITORY" \
               --title "Upstream Build Verification Failure: Factory CLI v${UPSTREAM_VER}" \
               --label "upstream-breakage" \
-              --assignee rNoz \
               --body-file /tmp/issue-body.md || true
           else
             echo "==> Breakage issue #$EXISTING_ISSUE is already open."

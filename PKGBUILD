@@ -1,4 +1,4 @@
-# Maintainer: rNoz <8237539+rNoz@users.noreply.github.com>
+# Maintainer: Project Maintainers <maintainers@users.noreply.github.com>
 pkgname=factory-ai-droid-cli-rnoz-bin
 pkgver=0.218.1
 pkgrel=2
