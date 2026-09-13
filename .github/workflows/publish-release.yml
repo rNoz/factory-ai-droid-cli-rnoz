@@ -100,7 +100,7 @@ jobs:
           python3 scripts/fetch-changelog.py "$UPSTREAM_VER" > /tmp/upstream-notes.md
 
           cat << 'EOF' > /tmp/release-notes.md
-          ## Factory CLI v${PACKAGE_VERSION} (rNoz tweaks)
+          ## Factory CLI v${PACKAGE_VERSION} (maintainer tweaks)
 
           ### Upstream Changes & Release Notes
           __UPSTREAM_NOTES__
@@ -128,8 +128,8 @@ jobs:
           ./scripts/patch-macos.sh
           ```
 
-          ### Maintainer Notification
-          cc @rNoz — Successfully built and smoke-tested in the Arch Linux container. AUR publication is attempted separately when configured; verify AUR availability before announcing the update.
+          ### Build Notification
+          Successfully built and smoke-tested in the Arch Linux container. AUR publication is attempted separately when configured; verify AUR availability before announcing the update.
           EOF
           sed -i 's/^          //' /tmp/release-notes.md
           sed -i "s/\${UPSTREAM_VER}/$UPSTREAM_VER/g" /tmp/release-notes.md
@@ -147,18 +147,18 @@ jobs:
             PKGBUILD .SRCINFO LICENSE patch_title.py patch_keybindings.py patches/patch_title.py patches/patch_keybindings.py factory-ai-droid-cli-rnoz-bin.install
 
           if ! gh release create "$RELEASE_TAG" "factory-ai-droid-cli-rnoz-bin-${PACKAGE_VERSION}.src.tar.gz" \
-            --title "Factory CLI v${PACKAGE_VERSION} (rNoz tweaks)" \
+            --title "Factory CLI v${PACKAGE_VERSION} (maintainer tweaks)" \
             --notes-file /tmp/release-notes.md \
             --target "$MERGE_SHA"; then
-            gh release edit "$RELEASE_TAG" --title "Factory CLI v${PACKAGE_VERSION} (rNoz tweaks)" --notes-file /tmp/release-notes.md
+            gh release edit "$RELEASE_TAG" --title "Factory CLI v${PACKAGE_VERSION} (maintainer tweaks)" --notes-file /tmp/release-notes.md
             gh release upload "$RELEASE_TAG" "factory-ai-droid-cli-rnoz-bin-${PACKAGE_VERSION}.src.tar.gz" --clobber
           fi
 
       - name: Publish to AUR (Optional)
         env:
           AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
-          AUR_USERNAME: ${{ secrets.AUR_USERNAME || 'rNoz' }}
-          AUR_EMAIL: ${{ secrets.AUR_EMAIL || '8237539+rNoz@users.noreply.github.com' }}
+          AUR_USERNAME: ${{ secrets.AUR_USERNAME }}
+          AUR_EMAIL: ${{ secrets.AUR_EMAIL }}
           AUR_PKG_NAME: ${{ vars.AUR_PKG_NAME || 'factory-ai-droid-cli-rnoz-bin' }}
         run: |
           if [ -z "$AUR_SSH_KEY" ]; then
