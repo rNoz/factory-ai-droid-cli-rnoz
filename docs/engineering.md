@@ -19,8 +19,11 @@
 
 ## Packaging behavior
 
-- Interactive `makepkg` asks before each patch and defaults to applying it.
-  Non-interactive builds apply both patches without prompting.
+- Interactive `makepkg` and `scripts/patch-macos.sh` ask before each patch and
+  default to applying it. Non-interactive runs apply both patches without
+  prompting. The macOS script asks before removing its backup after a
+  successful `--version` smoke test; non-interactive runs remove it
+  automatically.
 - The package prefers a system `rg` when available. If none is available at
   build time, it downloads and verifies a bundled ripgrep fallback.
 - Arch builds select one CPU-appropriate Droid binary and smoke-test it.

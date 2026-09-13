@@ -37,7 +37,7 @@
 | Cycle AI model | `Ctrl-N` | `Ctrl-P` |
 | Pull queued message | `Ctrl-G` | `Ctrl-I` |
 
-Applied in place by `patches/patch_keybindings.py` at identical byte length; any unknown or partially patched layout aborts the patch. Interactive `makepkg` asks before each patch (default `[Y]`); non-interactive builds apply both.
+Applied in place by `patches/patch_keybindings.py` at identical byte length; any unknown or partially patched layout aborts the patch. Interactive `makepkg` and `scripts/patch-macos.sh` ask before each patch (default `[Y]`); non-interactive runs apply both. The macOS script smoke-tests `droid --version` after all selected patches and asks before removing its backup (default `[Y]`).
 
 ---
 
@@ -89,7 +89,7 @@ cd factory-ai-droid-cli-rnoz
 ./scripts/patch-macos.sh
 ```
 
-*Locates `droid`, resolves symlinks, creates collision-resistant backups (`droid.bak-*`), applies byte-safe patches, and validates execution.*
+*Locates `droid`, resolves symlinks, creates collision-resistant backups (`droid.bak-*`), applies byte-safe patches, validates execution, and cleans up backups after successful non-interactive runs.*
 
 ---
 
