@@ -36,8 +36,8 @@ concurrency:
 
 permissions:
   contents: read
-  issues: write
-  pull-requests: write
+  issues: read
+  pull-requests: read
 
 jobs:
   build-and-test:
@@ -46,12 +46,12 @@ jobs:
     if: github.event_name != 'workflow_dispatch' || github.actor == github.repository_owner
     permissions:
       contents: read
-      issues: write
     outputs:
       should_build: ${{ steps.check_version.outputs.should_build }}
       run_ci: ${{ steps.check_version.outputs.run_ci }}
       upstream_version: ${{ steps.check_version.outputs.upstream_version }}
       package_revision: ${{ steps.check_version.outputs.package_revision }}
+      upstream_validation_failed: ${{ steps.validate_upstream.outcome == 'failure' }}
     steps:
       - name: Verify authorized maintainer dispatch
         if: github.event_name == 'workflow_dispatch'
@@ -183,6 +183,7 @@ jobs:
           python3 tests/test_release_metadata.py
 
       - name: Run multi-version patcher validation
+        id: validate_upstream
         if: steps.check_version.outputs.should_build == 'true'
         run: |
           python3 tests/test_versions.py --latest
@@ -206,54 +207,71 @@ jobs:
             PKGBUILD
             .SRCINFO
 
-      - name: Report upstream breakage on failure
-        if: >
-          failure() &&
-          github.ref == 'refs/heads/main' &&
-          steps.check_version.outcome == 'success' &&
-          steps.check_version.outputs.run_ci == 'true' &&
-          steps.check_version.outputs.should_build == 'true'
+  report-upstream-breakage:
+    name: report-upstream-breakage
+    needs: build-and-test
+    if: >
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      needs.build-and-test.result == 'failure' &&
+      needs.build-and-test.outputs.upstream_validation_failed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Report upstream compatibility validation failure
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          UPSTREAM_VER: ${{ steps.check_version.outputs.upstream_version }}
+          UPSTREAM_VER: ${{ needs.build-and-test.outputs.upstream_version }}
         run: |
-          echo "==> Build/test failed on main branch. Triggering breakage alerts..."
+          set -euo pipefail
+          echo "==> Upstream compatibility validation failed. Triggering breakage alert..."
 
-          EXISTING_ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "upstream-breakage" --state open --json number --jq '.[0].number // empty' || true)
+          if ! gh label list --repo "$GITHUB_REPOSITORY" --limit 100 --json name --jq '.[].name' |
+            grep -Fxq "upstream-breakage"; then
+            echo "::error::Required GitHub label 'upstream-breakage' is missing." >&2
+            exit 1
+          fi
+
+          if ! EXISTING_ISSUE=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+            --label "upstream-breakage" --state open --json number --jq '.[0].number // empty'); then
+            echo "::error::Unable to query open upstream-breakage issues." >&2
+            exit 1
+          fi
+
           if [ -z "$EXISTING_ISSUE" ]; then
             echo "==> Creating GitHub issue to alert maintainer..."
-            cat << 'EOF' > /tmp/issue-body.md
+            cat > /tmp/issue-body.md <<EOF
           ### Summary
 
-          The automated check and build workflow failed during package verification for **Factory CLI v${UPSTREAM_VER}**.
+          Automated upstream compatibility validation failed for **Factory CLI v${UPSTREAM_VER}**.
+          This may indicate an upstream layout change or a patcher regression.
 
           - **Workflow Run**: [Run #${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})
-          - **Target Version**: `${UPSTREAM_VER}`
-          - **Commit**: `${GITHUB_SHA}`
+          - **Target Version**: \`${UPSTREAM_VER}\`
+          - **Commit**: \`${GITHUB_SHA}\`
 
           ### Upstream References
 
-          - **Official Changelog**: [Factory Release Notes](https://docs.factory.ai/changelog/release-notes) (`https://docs.factory.ai/changelog/release-notes.md`)
+          - **Official Changelog**: [Factory Release Notes](https://docs.factory.ai/changelog/release-notes)
           - **Factory CLI Docs**: [Droid CLI Reference](https://docs.factory.ai/droid-cli/cli-reference)
-          - **Upstream Install Script**: `https://app.factory.ai/cli`
-          - **Upstream Binary Base**: `https://downloads.factory.ai/factory-cli/releases/`
+          - **Upstream Install Script**: \`https://app.factory.ai/cli\`
+          - **Upstream Binary Base**: \`https://downloads.factory.ai/factory-cli/releases/\`
 
           ### Maintainer Alert
-          Automated build verification failed for upstream release `v${UPSTREAM_VER}`. Manual inspection required.
+          cc @rNoz — Manual inspection required.
           EOF
             sed -i 's/^          //' /tmp/issue-body.md
-            sed -i "s/\${UPSTREAM_VER}/$UPSTREAM_VER/g" /tmp/issue-body.md
-            sed -i "s/\${GITHUB_RUN_ID}/$GITHUB_RUN_ID/g" /tmp/issue-body.md
-            sed -i "s/\${GITHUB_SHA}/$GITHUB_SHA/g" /tmp/issue-body.md
-            sed -i "s|\${GITHUB_SERVER_URL}|$GITHUB_SERVER_URL|g" /tmp/issue-body.md
-            sed -i "s|\${GITHUB_REPOSITORY}|$GITHUB_REPOSITORY|g" /tmp/issue-body.md
 
             gh issue create --repo "$GITHUB_REPOSITORY" \
-              --title "Upstream Build Verification Failure: Factory CLI v${UPSTREAM_VER}" \
+              --title "Upstream Compatibility Validation Failure: Factory CLI v${UPSTREAM_VER}" \
               --label "upstream-breakage" \
-              --body-file /tmp/issue-body.md || true
+              --body-file /tmp/issue-body.md
           else
             echo "==> Breakage issue #$EXISTING_ISSUE is already open."
+            gh issue comment "$EXISTING_ISSUE" --repo "$GITHUB_REPOSITORY" \
+              --body "cc @rNoz — Upstream compatibility validation failed again for Factory CLI v${UPSTREAM_VER}. [Workflow run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
           fi
 
   publish:

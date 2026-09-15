@@ -9,6 +9,9 @@
   serialized keymap, guarded runtime dispatch, model matcher, and human-facing
   chord hints before changing anything. It rotates editor → `Ctrl-G`, model
   cycling → `Ctrl-P`, and queued-message pull → `Ctrl-I`.
+- **Upstream layout compatibility:** Releases through v0.218 use action-linked
+  keymap records; v0.219 introduced binary-record keymap entries. Both layouts
+  have separate structural validation and idempotent, same-length replacements.
 - **Minifier tolerance:** Action identifiers are captured from structural
   anchors, so upstream renames do not matter when the surrounding layout stays
   compatible.

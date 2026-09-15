@@ -37,6 +37,54 @@ def keymap_table(queue: bytes = QUEUE_ACTION, editor: bytes = EDITOR_ACTION) -> 
     )
 
 
+def keymap_table_binary_records() -> bytes:
+    """Serialized keymap table shape introduced by the v0.219 release."""
+    return (
+        b"ctrl-b\x00\x00\x06\x00\x00\x80AAAA"
+        b"ctrl-d\x00\x00\x06\x00\x00\x80BBBB"
+        b"ctrl-g\x00\x00\x06\x00\x00\x80CCCC"
+        b"ctrl-n\x00\x00\x06\x00\x00\x80DDDD"
+        b"ctrl-p\x00\x00\x06\x00\x00\x80EEEE"
+        b"ctrl-slash\x00\x00\n\x00\x00\x80FFFF"
+        b"mode-toggle\x00\x00\x0b\x00\x00\x80GGGG"
+        b"model-cycle\x00\x00\x0b\x00\x00\x80HHHH"
+        b"Ctrl+N\x00"
+        b"autonomy-cycle\x00\x00\x0e\x00\x00\x80IIII"
+        b"Ctrl+L\x00"
+    )
+
+
+def binary_record_dispatch_block() -> bytes:
+    """Runtime dispatch shape introduced by the v0.219 release."""
+    return (
+        b'if(ia({key:Qn,input:Br},"ctrl-r")&&Te&&!pi&&!Kr)return Te(),!0;'
+        b'if(ia({key:Qn,input:Br},"ctrl-g")&&Ee&&!pi&&!Kr)return Ee(),!0;'
+        b'if(ia({key:Qn,input:Br},"ctrl-p")&&!pi&&!Kr)return Go(),!0;'
+        b'if(ia({key:Qn,input:Br},"ctrl-slash"))return E?.(),!0;'
+        b'if(ia({key:Qn,input:Br},"model-cycle")){if(G&&!pi&&!Kr)return G(),!0}'
+        b'if(ia({key:Qn,input:Br},"autonomy-cycle")){if(U&&!pi&&!Kr)return U(),!0}'
+    )
+
+
+def binary_record_model_cycle_descriptor() -> bytes:
+    return (
+        b'modelCycle:{id:"model-cycle",label:"Ctrl+N",'
+        b'matcher:(e)=>S8l(e,"n")}'
+    )
+
+
+def binary_record_fixture() -> bytes:
+    return (
+        keymap_table_binary_records()
+        + b"|"
+        + binary_record_dispatch_block()
+        + b"|"
+        + binary_record_model_cycle_descriptor()
+        + b"|"
+        + display_block()
+    )
+
+
 def dispatch_block(
     queue: bytes = QUEUE_ACTION,
     editor: bytes = EDITOR_ACTION,
@@ -160,6 +208,22 @@ def test_rotates_editor_model_and_queue_bindings() -> None:
     assert b'"ctrl+p"' in patched
 
 
+def test_rotates_binary_record_keymap_layout() -> None:
+    original = binary_record_fixture()
+
+    patched = patch_keybindings.apply_patch_bytes(original)
+
+    assert len(patched) == len(original)
+    assert b"ctrl-i\x00\x00\x06\x00\x00\x80CCCC" in patched
+    assert b"ctrl-g\x00\x00\x06\x00\x00\x80EEEE" in patched
+    assert b"ctrl-p\x00\x00\x06\x00\x00\x80DDDD" in patched
+    assert b"ctrl-n\x00\x00\x06\x00\x00\x80DDDD" not in patched
+    assert b'ia({key:Qn,input:Br},"ctrl-i")&&Ee&&!pi&&!Kr)return Ee(),!0;' in patched
+    assert b'ia({key:Qn,input:Br},"ctrl-g")&&!pi&&!Kr)return Go(),!0;' in patched
+    assert b'modelCycle:{id:"model-cycle",label:"Ctrl+P",matcher:(e)=>S8l(e,"p")}' in patched
+    assert patch_keybindings.apply_patch_bytes(patched) == patched
+
+
 def test_display_counts_permute() -> None:
     original = fixture()
     patched = patch_keybindings.apply_patch_bytes(original)
@@ -204,6 +268,30 @@ def test_refuses_partially_patched_binaries() -> None:
         b'if(mf({key:ZL,input:_A},"ctrl-i")&&GH&&!tD&&!KI)return GH(),!0;',
     )
     expect_patch_error(dispatch_only, b"partially")
+    stale_label = fully_patched.replace(b'label:"Ctrl+P"', b'label:"Ctrl+N"', 1)
+    expect_patch_error(stale_label, b"partially")
+    stale_dispatch = fully_patched + b'|mf({key:ZL,input:_A},"ctrl-p")&&!tD&&!KI)return hI(),!0;'
+    expect_patch_error(stale_dispatch, b"partially")
+
+
+def test_refuses_unsafe_binary_record_layouts() -> None:
+    expect_patch_error(binary_record_fixture() + b"|" + keymap_table_binary_records(), b"multiple")
+    guarded_editor = binary_record_fixture().replace(
+        b'"ctrl-p")&&!pi&&!Kr', b'"ctrl-p")&&Go&&!pi&&!Kr', 1
+    )
+    expect_patch_error(guarded_editor, b"unsafe")
+    patched = patch_keybindings.apply_patch_bytes(binary_record_fixture())
+    stale_label = patched.replace(b'label:"Ctrl+P"', b'label:"Ctrl+N"', 1)
+    expect_patch_error(stale_label, b"unknown")
+
+
+def test_refuses_structural_matches_across_range_gaps() -> None:
+    fragmented = binary_record_fixture().replace(
+        b"ctrl-n\x00\x00\x06",
+        patch_keybindings.RANGE_GAP + b"ctrl-n\x00\x00\x06",
+        1,
+    )
+    expect_patch_error(fragmented, b"keymap")
 
 
 def test_tolerates_minified_identifier_renames() -> None:
@@ -241,10 +329,13 @@ def test_patch_report_describes_old_and_new_bindings() -> None:
 if __name__ == "__main__":
     tests = (
         test_rotates_editor_model_and_queue_bindings,
+        test_rotates_binary_record_keymap_layout,
         test_display_counts_permute,
         test_refuses_ambiguous_bindings,
         test_refuses_unsafe_layouts,
         test_refuses_partially_patched_binaries,
+        test_refuses_unsafe_binary_record_layouts,
+        test_refuses_structural_matches_across_range_gaps,
         test_tolerates_minified_identifier_renames,
         test_is_idempotent,
         test_patch_report_describes_old_and_new_bindings,

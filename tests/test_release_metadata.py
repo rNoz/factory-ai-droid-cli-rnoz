@@ -295,10 +295,20 @@ def test_release_concurrency_and_failure_reporting_are_scoped() -> None:
     workflow = WORKFLOW.read_text()
     assert "format('factory-cli-pr-{0}', github.event.pull_request.number)" in workflow
     assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in workflow
-    assert "steps.check_version.outcome == 'success'" in workflow
     assert "steps.check_version.outputs.run_ci == 'true'" in workflow
     assert "steps.check_version.outputs.should_build == 'true'" in workflow
+    assert "needs.build-and-test.result == 'failure'" in workflow
     assert "UPSTREAM_VER: ${{ steps.check_version.outputs.upstream_version || 'unknown' }}" not in workflow
+    assert "cc @rNoz — Manual inspection required." in workflow
+    assert 'gh issue comment "$EXISTING_ISSUE"' in workflow
+    build_block, report_block = workflow.split("  report-upstream-breakage:", 1)
+    report_block = report_block.split("  publish:", 1)[0]
+    assert "upstream_validation_failed:" in build_block
+    assert "id: validate_upstream" in build_block
+    assert "issues: write" not in build_block.split("  jobs:", 1)[-1].split("  publish:", 1)[0]
+    assert "permissions:\n      contents: read\n      issues: write" in report_block
+    assert "needs.build-and-test.outputs.upstream_validation_failed == 'true'" in report_block
+    assert "|| true" not in report_block
 
 
 def test_publication_uses_healed_metadata_without_dead_copy_paths() -> None:

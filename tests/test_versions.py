@@ -30,13 +30,16 @@ VERSIONS_TO_TEST = [
     "0.218.0",
     "0.218.1",
     "0.218.2",
+    "0.219.0",
 ]
 
 BASE_URL = "https://downloads.factory.ai/factory-cli/releases"
 LATEST_VERSION_URL = "https://app.factory.ai/cli"
-# Fallback middle window for the keymap search when the server omits
-# Content-Range; the primary path derives the window from the binary size.
-KEYBINDING_RANGE = "bytes=100000000-180000000"
+# Fallback middle window measured against the 100-180 MB keymap/runtime span
+# in v0.219.0 and the historical 302-310 MB releases.
+KEYBINDING_RANGE_START = 100000000
+KEYBINDING_RANGE_END = 180000000
+KEYBINDING_RANGE = f"bytes={KEYBINDING_RANGE_START}-{KEYBINDING_RANGE_END}"
 
 # The serialized keymap table, guarded dispatch statements, and model registry
 # first appear between 0.200.0 and 0.205.0: byte probes of the complete
@@ -57,6 +60,7 @@ def keybinding_expected(ver: str) -> bool:
 
 PRIMARY_PATTERN = re.compile(rb"if\(([a-zA-Z0-9_$.()]+\.isNonInteractiveCLIMode\(\))\)return null;")
 CONTEXT_MARKERS = [b"formatTitle", b"isSessionTitleManuallySet", b"firstUserText"]
+RANGE_RESPONSE_RE = re.compile(r"bytes (\d+)-(\d+)/(\d+)$")
 
 
 def find_valid_matches(data: bytes):
@@ -78,6 +82,80 @@ def compute_replacement(matched_bytes: bytes) -> bytes:
     padding = b" " * (match_len - len(prefix) - len(suffix))
     replacement = prefix + padding + suffix
     return replacement
+
+
+def merge_range_data(
+    first_data: bytes, first_start: int, second_data: bytes, second_start: int
+) -> bytes:
+    """Join ordered byte ranges without duplicating overlap or bridging gaps."""
+    if patch_keybindings.RANGE_GAP in first_data or patch_keybindings.RANGE_GAP in second_data:
+        raise ValueError("range data contains the reserved gap marker")
+    first_end = first_start + len(first_data)
+    second_end = second_start + len(second_data)
+    if first_start <= second_start:
+        if first_end < second_start:
+            return first_data + patch_keybindings.RANGE_GAP + second_data
+        overlap_end = min(first_end, second_end)
+        overlap = max(0, overlap_end - second_start)
+        first_overlap_start = second_start - first_start
+        if overlap and first_data[first_overlap_start : first_overlap_start + overlap] != second_data[:overlap]:
+            raise ValueError("overlapping byte ranges changed between requests")
+        return first_data + second_data[overlap:]
+    if second_end < first_start:
+        return second_data + patch_keybindings.RANGE_GAP + first_data
+    overlap_end = min(second_end, first_end)
+    overlap = max(0, overlap_end - first_start)
+    second_overlap_start = first_start - second_start
+    if overlap and second_data[second_overlap_start : second_overlap_start + overlap] != first_data[:overlap]:
+        raise ValueError("overlapping byte ranges changed between requests")
+    return second_data + first_data[overlap:]
+
+
+def _validate_range_response(
+    data: bytes, status: int, content_range: str, content_length: str
+) -> None:
+    if content_length:
+        try:
+            declared_length = int(content_length)
+        except ValueError as error:
+            raise ValueError("range response has an invalid Content-Length") from error
+        if declared_length != len(data):
+            raise ValueError("range response body length disagrees with Content-Length")
+    if status == 200:
+        if content_range:
+            raise ValueError("full range response unexpectedly included Content-Range")
+        return
+    if status != 206:
+        raise ValueError(f"range request returned unexpected HTTP status {status}")
+    match = RANGE_RESPONSE_RE.fullmatch(content_range)
+    if not match:
+        raise ValueError("partial range response is missing a valid Content-Range")
+    start, end, total = (int(value) for value in match.groups())
+    if end < start or total <= end or len(data) != end - start + 1:
+        raise ValueError("partial range response has inconsistent bounds or body length")
+
+
+def fetch_range(url: str, range_header: str, retries: int = 3) -> tuple[bytes, str, int]:
+    last_err = None
+    for attempt in range(1, retries + 1):
+        try:
+            req = urllib.request.Request(url, headers={"Range": range_header})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = resp.read()
+                content_range = resp.headers.get("Content-Range") or ""
+                status = int(getattr(resp, "status", None) or resp.getcode())
+                _validate_range_response(
+                    data,
+                    status,
+                    content_range,
+                    resp.headers.get("Content-Length") or "",
+                )
+                return data, content_range, status
+        except Exception as err:
+            last_err = err
+            if attempt < retries:
+                time.sleep(1.5 * attempt)
+    raise RuntimeError(f"range request failed after {retries} attempts: {last_err}")
 
 
 def test_synthetic_fixtures() -> bool:
@@ -145,6 +223,34 @@ def test_synthetic_fixtures() -> bool:
         return False
     print("  [PASS] Synthetic fixture: keybinding floor gates only pre-keymap releases")
 
+    if merge_range_data(b"EFGHIJ", 4, b"IJKLMN", 8) != b"EFGHIJKLMN":
+        print("  [FAIL] Synthetic fixture: overlapping ranges were not merged uniquely")
+        return False
+    if merge_range_data(b"EF", 4, b"YZ", 10) != b"EF" + patch_keybindings.RANGE_GAP + b"YZ":
+        print("  [FAIL] Synthetic fixture: disjoint ranges were joined without a guard")
+        return False
+    if merge_range_data(b"0123456789", 0, b"234", 2) != b"0123456789":
+        print("  [FAIL] Synthetic fixture: nested range was not merged")
+        return False
+    if merge_range_data(b"234", 2, b"0123456789", 0) != b"0123456789":
+        print("  [FAIL] Synthetic fixture: reverse nested range was not merged")
+        return False
+    _validate_range_response(b"ABCD", 206, "bytes 10-13/20", "4")
+    _validate_range_response(b"ABCD", 200, "", "4")
+    for response in (
+        (b"ABC", 206, "bytes 10-13/20", "3"),
+        (b"ABCD", 206, "", "4"),
+        (b"ABCD", 200, "bytes 0-3/4", "4"),
+        (b"ABCD", 500, "", "4"),
+    ):
+        try:
+            _validate_range_response(*response)
+        except ValueError:
+            continue
+        print("  [FAIL] Synthetic fixture: malformed range response was accepted")
+        return False
+    print("  [PASS] Synthetic fixture: range overlap and gap handling are fail-safe")
+
     return True
 
 
@@ -154,29 +260,24 @@ ARCH_VARIANTS = ["x64", "x64-baseline"]
 def test_variant(ver: str, arch: str) -> bool:
     url = f"{BASE_URL}/{ver}/linux/{arch}/droid"
     # The JS bundle is packed into the tail ~60MB of the binary
-    headers = {"Range": "bytes=-60000000"}
-    req = urllib.request.Request(url, headers=headers)
-
-    data = None
-    total_size = 0
-    last_err = None
-    retries = 3
-    for attempt in range(1, retries + 1):
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                data = resp.read()
-                content_range = resp.headers.get("Content-Range") or ""
-                if "/" in content_range:
-                    total_size = int(content_range.rsplit("/", 1)[-1])
-            break
-        except Exception as err:
-            last_err = err
-            if attempt < retries:
-                time.sleep(1.5 * attempt)
-
-    if data is None:
-        print(f"  [FAIL] Network or range request failed after {retries} attempts for v{ver} ({arch}): {last_err}")
+    data = b""
+    tail_start: int | None = None
+    total_size: int | None = None
+    try:
+        data, content_range, response_status = fetch_range(url, "bytes=-60000000")
+    except RuntimeError as error:
+        print(f"  [FAIL] Network or range request failed for v{ver} ({arch}): {error}")
         return False
+    if response_status == 200:
+        tail_start = 0
+        total_size = len(data)
+    else:
+        range_match = RANGE_RESPONSE_RE.fullmatch(content_range)
+        if not range_match:
+            print(f"  [FAIL] Invalid range response for v{ver} ({arch})")
+            return False
+        tail_start = int(range_match.group(1))
+        total_size = int(range_match.group(3))
 
     valid_matches = find_valid_matches(data)
     if len(valid_matches) != 1:
@@ -203,18 +304,31 @@ def test_variant(ver: str, arch: str) -> bool:
     try:
         patched_keybindings = patch_keybindings.apply_patch_bytes(data)
     except patch_keybindings.PatchError:
-        # The runtime handler is in the tail, while the serialized keymap/help
-        # resources sit at ~42% of binary size (measured: 42.1% in v0.205.0,
-        # 42.2% in v0.215.1) and so can live earlier in large binaries. Derive
-        # that middle window from the total size reported by the tail request.
-        if total_size:
-            mid_range = f"bytes={max(0, int(total_size * 0.25))}-{int(total_size * 0.60)}"
-        else:
-            mid_range = KEYBINDING_RANGE
-        extra_req = urllib.request.Request(url, headers={"Range": mid_range})
+        # The runtime handler and serialized keymap can move independently
+        # between releases. Use one contiguous window so duplicate overlapping
+        # ranges cannot create false ambiguity during cross-validation.
+        mid_range = KEYBINDING_RANGE
         try:
-            with urllib.request.urlopen(extra_req, timeout=30) as resp:
-                keybinding_data = data + resp.read()
+            extra_data, extra_range, extra_status = fetch_range(url, mid_range)
+            if extra_status == 200:
+                if total_size is not None and len(extra_data) != total_size:
+                    raise ValueError("full fallback response length disagrees with tail range")
+                keybinding_data = extra_data
+            else:
+                extra_match = RANGE_RESPONSE_RE.fullmatch(extra_range)
+                if not extra_match:
+                    raise ValueError("fallback range response is missing a valid Content-Range")
+                extra_start = int(extra_match.group(1))
+                extra_total_size = int(extra_match.group(3))
+                if total_size is not None and extra_total_size != total_size:
+                    raise ValueError("range responses reported different total sizes")
+                total_size = extra_total_size
+                if len(data) == total_size:
+                    keybinding_data = data
+                else:
+                    if tail_start is None:
+                        tail_start = total_size - len(data)
+                    keybinding_data = merge_range_data(extra_data, extra_start, data, tail_start)
             patched_keybindings = patch_keybindings.apply_patch_bytes(keybinding_data)
         except Exception as error:
             print(f"  [FAIL] Keybinding patch rejected v{ver} ({arch}): {error}")
