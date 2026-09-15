@@ -39,18 +39,23 @@ def keymap_table(queue: bytes = QUEUE_ACTION, editor: bytes = EDITOR_ACTION) -> 
 
 def keymap_table_binary_records() -> bytes:
     """Serialized keymap table shape introduced by the v0.219 release."""
-    return (
-        b"ctrl-b\x00\x00\x06\x00\x00\x80AAAA"
-        b"ctrl-d\x00\x00\x06\x00\x00\x80BBBB"
-        b"ctrl-g\x00\x00\x06\x00\x00\x80CCCC"
-        b"ctrl-n\x00\x00\x06\x00\x00\x80DDDD"
-        b"ctrl-p\x00\x00\x06\x00\x00\x80EEEE"
-        b"ctrl-slash\x00\x00\n\x00\x00\x80FFFF"
-        b"mode-toggle\x00\x00\x0b\x00\x00\x80GGGG"
-        b"model-cycle\x00\x00\x0b\x00\x00\x80HHHH"
-        b"Ctrl+N\x00"
-        b"autonomy-cycle\x00\x00\x0e\x00\x00\x80IIII"
-        b"Ctrl+L\x00"
+    def record(key: bytes, record_type: int, payload: bytes) -> bytes:
+        return key + bytes((0, 0, record_type, 0, 0, 128)) + payload
+
+    return b"".join(
+        (
+            record(b"ctrl-b", 6, b"AAAA"),
+            record(b"ctrl-d", 6, b"BBBB"),
+            record(b"ctrl-g", 6, b"CCCC"),
+            record(b"ctrl-n", 6, b"DDDD"),
+            record(b"ctrl-p", 6, b"EEEE"),
+            record(b"ctrl-slash", 10, b"FFFF"),
+            record(b"mode-toggle", 11, b"GGGG"),
+            record(b"model-cycle", 11, b"HHHH"),
+            b"Ctrl+N\x00",
+            record(b"autonomy-cycle", 14, b"IIII"),
+            b"Ctrl+L\x00",
+        )
     )
 
 
@@ -287,8 +292,8 @@ def test_refuses_unsafe_binary_record_layouts() -> None:
 
 def test_refuses_structural_matches_across_range_gaps() -> None:
     fragmented = binary_record_fixture().replace(
-        b"ctrl-n\x00\x00\x06",
-        patch_keybindings.RANGE_GAP + b"ctrl-n\x00\x00\x06",
+        b"ctrl-n" + bytes((0, 0, 6)),
+        patch_keybindings.RANGE_GAP + b"ctrl-n" + bytes((0, 0, 6)),
         1,
     )
     expect_patch_error(fragmented, b"keymap")
