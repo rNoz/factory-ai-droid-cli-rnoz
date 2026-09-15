@@ -37,23 +37,24 @@ def keymap_table(queue: bytes = QUEUE_ACTION, editor: bytes = EDITOR_ACTION) -> 
     )
 
 
+def binary_record(key: bytes, record_type: int, payload: bytes) -> bytes:
+    return key + bytes((0, 0, record_type, 0, 0, 128)) + payload
+
+
 def keymap_table_binary_records() -> bytes:
     """Serialized keymap table shape introduced by the v0.219 release."""
-    def record(key: bytes, record_type: int, payload: bytes) -> bytes:
-        return key + bytes((0, 0, record_type, 0, 0, 128)) + payload
-
     return b"".join(
         (
-            record(b"ctrl-b", 6, b"AAAA"),
-            record(b"ctrl-d", 6, b"BBBB"),
-            record(b"ctrl-g", 6, b"CCCC"),
-            record(b"ctrl-n", 6, b"DDDD"),
-            record(b"ctrl-p", 6, b"EEEE"),
-            record(b"ctrl-slash", 10, b"FFFF"),
-            record(b"mode-toggle", 11, b"GGGG"),
-            record(b"model-cycle", 11, b"HHHH"),
+            binary_record(b"ctrl-b", 6, b"AAAA"),
+            binary_record(b"ctrl-d", 6, b"BBBB"),
+            binary_record(b"ctrl-g", 6, b"CCCC"),
+            binary_record(b"ctrl-n", 6, b"DDDD"),
+            binary_record(b"ctrl-p", 6, b"EEEE"),
+            binary_record(b"ctrl-slash", 10, b"FFFF"),
+            binary_record(b"mode-toggle", 11, b"GGGG"),
+            binary_record(b"model-cycle", 11, b"HHHH"),
             b"Ctrl+N\x00",
-            record(b"autonomy-cycle", 14, b"IIII"),
+            binary_record(b"autonomy-cycle", 14, b"IIII"),
             b"Ctrl+L\x00",
         )
     )
@@ -219,10 +220,10 @@ def test_rotates_binary_record_keymap_layout() -> None:
     patched = patch_keybindings.apply_patch_bytes(original)
 
     assert len(patched) == len(original)
-    assert b"ctrl-i\x00\x00\x06\x00\x00\x80CCCC" in patched
-    assert b"ctrl-g\x00\x00\x06\x00\x00\x80EEEE" in patched
-    assert b"ctrl-p\x00\x00\x06\x00\x00\x80DDDD" in patched
-    assert b"ctrl-n\x00\x00\x06\x00\x00\x80DDDD" not in patched
+    assert binary_record(b"ctrl-i", 6, b"CCCC") in patched
+    assert binary_record(b"ctrl-g", 6, b"EEEE") in patched
+    assert binary_record(b"ctrl-p", 6, b"DDDD") in patched
+    assert binary_record(b"ctrl-n", 6, b"DDDD") not in patched
     assert b'ia({key:Qn,input:Br},"ctrl-i")&&Ee&&!pi&&!Kr)return Ee(),!0;' in patched
     assert b'ia({key:Qn,input:Br},"ctrl-g")&&!pi&&!Kr)return Go(),!0;' in patched
     assert b'modelCycle:{id:"model-cycle",label:"Ctrl+P",matcher:(e)=>S8l(e,"p")}' in patched
