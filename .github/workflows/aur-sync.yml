@@ -358,7 +358,7 @@ jobs:
         with:
           token: ${{ secrets.RELEASE_TOKEN }}
           fetch-depth: 0
-          persist-credentials: false
+          persist-credentials: true
 
       - name: Update open release branches before auto-merge
         env:

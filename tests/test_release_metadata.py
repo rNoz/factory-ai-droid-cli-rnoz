@@ -184,6 +184,8 @@ def test_release_automation_uses_merge_gated_prs() -> None:
     assert '--set-pkgrel "$PACKAGE_REVISION"' in workflow
     assert "PACKAGE_CHANGE" in workflow
     assert "chore(release): prepare" in workflow
+    refresh_section = workflow[workflow.index("name: refresh release pull request") :]
+    assert "persist-credentials: true" in refresh_section
 
 
 def test_upgrade_notice_reports_the_installed_version() -> None:
