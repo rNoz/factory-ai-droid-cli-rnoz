@@ -7,7 +7,9 @@ current Factory Droid releases, as well as offline synthetic test fixtures.
 """
 
 import argparse
+import json
 import re
+import struct
 import sys
 import time
 import urllib.request
@@ -35,11 +37,12 @@ VERSIONS_TO_TEST = [
 
 BASE_URL = "https://downloads.factory.ai/factory-cli/releases"
 LATEST_VERSION_URL = "https://app.factory.ai/cli"
-# Fallback middle window measured against the 100-180 MB keymap/runtime span
-# in v0.219.0 and the historical 302-310 MB releases.
-KEYBINDING_RANGE_START = 100000000
-KEYBINDING_RANGE_END = 180000000
-KEYBINDING_RANGE = f"bytes={KEYBINDING_RANGE_START}-{KEYBINDING_RANGE_END}"
+RELEASE_WINDOWS_FILE = Path(__file__).resolve().parent / "release_windows.json"
+RELEASE_WINDOWS: dict[str, dict] = (
+    json.loads(RELEASE_WINDOWS_FILE.read_text())
+    if RELEASE_WINDOWS_FILE.exists()
+    else {}
+)
 
 # The serialized keymap table, guarded dispatch statements, and model registry
 # first appear between 0.200.0 and 0.205.0: byte probes of the complete
@@ -255,31 +258,168 @@ def test_synthetic_fixtures() -> bool:
 
 
 ARCH_VARIANTS = ["x64", "x64-baseline"]
+TILE_SIZE = 8 * 1024 * 1024
+TILE_OVERLAP = 16 * 1024
 
 
-def test_variant(ver: str, arch: str) -> bool:
-    url = f"{BASE_URL}/{ver}/linux/{arch}/droid"
-    # The JS bundle is packed into the tail ~60MB of the binary
-    data = b""
-    tail_start: int | None = None
-    total_size: int | None = None
+def parse_elf_sections(url: str) -> list[tuple[str, int, int]]:
+    """Fetch ELF section table via minimal ranges (~4KB). Returns [(name, offset, size)]."""
+    header, _, status = fetch_range(url, "bytes=0-63")
+    if status == 200 or header[:5] != b"\x7fELF\x02":
+        return []
+    e_shoff = struct.unpack_from("<Q", header, 40)[0]
+    e_shentsize, e_shnum, e_shstrndx = struct.unpack_from("<HHH", header, 58)
+    if e_shoff == 0 or e_shnum == 0:
+        return []
+    table_bytes = e_shentsize * e_shnum
+    table, _, _ = fetch_range(url, f"bytes={e_shoff}-{e_shoff + table_bytes - 1}")
+    raw_sections = []
+    for i in range(e_shnum):
+        name_off, _type, _flags, _addr, offset, size = struct.unpack_from(
+            "<IIQQQQ", table, i * e_shentsize
+        )
+        raw_sections.append((name_off, offset, size))
+    if e_shstrndx >= len(raw_sections):
+        return []
+    str_off, str_size = raw_sections[e_shstrndx][1], raw_sections[e_shstrndx][2]
+    names, _, _ = fetch_range(url, f"bytes={str_off}-{str_off + str_size - 1}")
+    sections = []
+    for name_off, offset, size in raw_sections:
+        end = names.find(b"\x00", name_off)
+        name = names[name_off:end].decode("ascii", "replace") if end != -1 else ""
+        sections.append((name, offset, size))
+    return sections
+
+
+def _cluster_signature_in(tile: bytes) -> tuple[int, int] | None:
+    km_bin = patch_keybindings._find_binary_record_keymap(tile, patched=False)
+    if km_bin:
+        return km_bin[0], km_bin[2]
+    offset = 0
+    while True:
+        position = tile.find(b"ctrl-g\x00", offset)
+        if position == -1:
+            break
+        match = patch_keybindings.TABLE_RE.match(tile, position)
+        if match and patch_keybindings.RANGE_GAP not in match.group(0):
+            return position, match.end()
+        offset = position + 1
+    return None
+
+
+def discover_keymap_window(url: str, total_size: int, tail_start: int) -> tuple[int, int] | None:
+    """Locate the keymap cluster for an unseen release and return (start, length)."""
     try:
-        data, content_range, response_status = fetch_range(url, "bytes=-60000000")
-    except RuntimeError as error:
-        print(f"  [FAIL] Network or range request failed for v{ver} ({arch}): {error}")
-        return False
-    if response_status == 200:
-        tail_start = 0
-        total_size = len(data)
-    else:
-        range_match = RANGE_RESPONSE_RE.fullmatch(content_range)
-        if not range_match:
-            print(f"  [FAIL] Invalid range response for v{ver} ({arch})")
-            return False
-        tail_start = int(range_match.group(1))
-        total_size = int(range_match.group(3))
+        sections = parse_elf_sections(url)
+        bun_sections = [(o, s) for n, o, s in sections if n == ".bun" and s > 1_000_000]
+        if bun_sections:
+            search_start, search_size = bun_sections[0]
+        else:
+            search_start, search_size = 80_000_000, max(0, total_size - 80_000_000)
+    except Exception:
+        search_start, search_size = 80_000_000, max(0, total_size - 80_000_000)
 
-    valid_matches = find_valid_matches(data)
+    lo = max(0, search_start)
+    hi = min(lo + search_size, tail_start)
+    pos = lo
+    while pos < hi:
+        chunk_start = pos
+        chunk_end = min(hi, pos + TILE_SIZE + TILE_OVERLAP)
+        tile, _, _ = fetch_range(url, f"bytes={chunk_start}-{chunk_end - 1}")
+        cluster = _cluster_signature_in(tile)
+        if cluster:
+            c_start, c_end = cluster
+            kstart = chunk_start + c_start
+            kend = chunk_start + c_end
+            window_start = max(0, kstart - 16384)
+            window_len = (kend - kstart) + 32768
+            return window_start, window_len
+        pos = chunk_end - TILE_OVERLAP
+    return None
+
+
+def _count_chord(data: bytes, chord: bytes) -> int:
+    """Count non-word-extended chord occurrences (e.g. avoid Ctrl+Invio for Ctrl+I)."""
+    cnt = 0
+    pos = 0
+    chord_len = len(chord)
+    while True:
+        pos = data.find(chord, pos)
+        if pos == -1:
+            break
+        end = pos + chord_len
+        if end >= len(data) or not (65 <= data[end] <= 90 or 97 <= data[end] <= 122):
+            cnt += 1
+        pos += chord_len
+    return cnt
+
+
+def test_variant(ver: str, arch: str, prefer_cached: bool = False) -> bool:
+    cached_path = Path(".tmp/factory-releases") / f"droid-{ver}-{arch}"
+    if prefer_cached and cached_path.is_file() and cached_path.stat().st_size > 50_000_000:
+        data = cached_path.read_bytes()
+        tail_start = len(data) - min(60_000_000, len(data))
+        total_size = len(data)
+        keybinding_data = data
+        title_source = data[tail_start:]
+    else:
+        url = f"{BASE_URL}/{ver}/linux/{arch}/droid"
+        key = f"{ver}|{arch}"
+        entry = RELEASE_WINDOWS.get(key)
+        if entry:
+            windows = entry.get("windows", [])
+            if len(windows) == 1:
+                w_start, w_len = windows[0]
+                data, content_range, response_status = fetch_range(url, f"bytes={w_start}-{w_start + w_len - 1}")
+                tail_start = w_start
+                total_size = entry.get("size", len(data))
+                keybinding_data = data
+                title_source = data
+            elif len(windows) == 2:
+                (w0_start, w0_len), (w1_start, w1_len) = windows
+                d0, _, _ = fetch_range(url, f"bytes={w0_start}-{w0_start + w0_len - 1}")
+                d1, content_range, response_status = fetch_range(url, f"bytes={w1_start}-{w1_start + w1_len - 1}")
+                data = d1
+                tail_start = w1_start
+                total_size = entry.get("size", w1_start + len(d1))
+                keybinding_data = merge_range_data(d0, w0_start, d1, w1_start)
+                title_source = d1
+            else:
+                raise ValueError(f"invalid windows manifest entry for {key}")
+        else:
+            try:
+                data, content_range, response_status = fetch_range(url, "bytes=-60000000")
+            except RuntimeError as error:
+                print(f"  [FAIL] Network or range request failed for v{ver} ({arch}): {error}")
+                return False
+            if response_status == 200:
+                tail_start = 0
+                total_size = len(data)
+            else:
+                range_match = RANGE_RESPONSE_RE.fullmatch(content_range)
+                if not range_match:
+                    print(f"  [FAIL] Invalid range response for v{ver} ({arch})")
+                    return False
+                tail_start = int(range_match.group(1))
+                total_size = int(range_match.group(3))
+            title_source = data
+            if not keybinding_expected(ver):
+                keybinding_data = data
+            else:
+                try:
+                    patched_keybindings = patch_keybindings.apply_patch_bytes(data)
+                    keybinding_data = data
+                except patch_keybindings.PatchError:
+                    discovered = discover_keymap_window(url, total_size, tail_start)
+                    if not discovered:
+                        print(f"  [FAIL] Keybinding cluster not found in v{ver} ({arch})")
+                        return False
+                    w0_start, w0_len = discovered
+                    d0, _, _ = fetch_range(url, f"bytes={w0_start}-{w0_start + w0_len - 1}")
+                    keybinding_data = merge_range_data(d0, w0_start, data, tail_start)
+                    print(f"  [DISCOVERED] Window for {key}: [{w0_start}, {w0_len}]")
+
+    valid_matches = find_valid_matches(title_source)
     if len(valid_matches) != 1:
         print(f"  [FAIL] Expected exactly 1 contextual match for v{ver} ({arch}), found {len(valid_matches)}")
         return False
@@ -302,39 +442,11 @@ def test_variant(ver: str, arch: str) -> bool:
         return True
 
     try:
-        patched_keybindings = patch_keybindings.apply_patch_bytes(data)
-    except patch_keybindings.PatchError:
-        # The runtime handler and serialized keymap can move independently
-        # between releases. Use one contiguous window so duplicate overlapping
-        # ranges cannot create false ambiguity during cross-validation.
-        mid_range = KEYBINDING_RANGE
-        try:
-            extra_data, extra_range, extra_status = fetch_range(url, mid_range)
-            if extra_status == 200:
-                if total_size is not None and len(extra_data) != total_size:
-                    raise ValueError("full fallback response length disagrees with tail range")
-                keybinding_data = extra_data
-            else:
-                extra_match = RANGE_RESPONSE_RE.fullmatch(extra_range)
-                if not extra_match:
-                    raise ValueError("fallback range response is missing a valid Content-Range")
-                extra_start = int(extra_match.group(1))
-                extra_total_size = int(extra_match.group(3))
-                if total_size is not None and extra_total_size != total_size:
-                    raise ValueError("range responses reported different total sizes")
-                total_size = extra_total_size
-                if len(data) == total_size:
-                    keybinding_data = data
-                else:
-                    if tail_start is None:
-                        tail_start = total_size - len(data)
-                    keybinding_data = merge_range_data(extra_data, extra_start, data, tail_start)
-            patched_keybindings = patch_keybindings.apply_patch_bytes(keybinding_data)
-        except Exception as error:
-            print(f"  [FAIL] Keybinding patch rejected v{ver} ({arch}): {error}")
-            return False
-    else:
-        keybinding_data = data
+        patched_keybindings = patch_keybindings.apply_patch_bytes(keybinding_data)
+    except Exception as error:
+        print(f"  [FAIL] Keybinding patch rejected v{ver} ({arch}): {error}")
+        return False
+
     if len(patched_keybindings) != len(keybinding_data):
         print(f"  [FAIL] Keybinding patch changed binary size for v{ver} ({arch})")
         return False
@@ -346,18 +458,18 @@ def test_variant(ver: str, arch: str) -> bool:
         return False
 
     # The rotation is a byte-level remap on human chord styles: old queue
-    # hints (G) move to Q, old model hints (N) to P, and old editor hints (P)
+    # hints (G) move to I, old model hints (N) to P, and old editor hints (P)
     # to G, in every style ("Ctrl+P", "Ctrl + P", "ctrl+N", ...).
     for template in (b"Ctrl+%s", b"Ctrl + %s", b"ctrl+%s", b"Ctrl-%s"):
         before = {
-            letter: keybinding_data.count(template % letter)
-            for letter in (b"G", b"N", b"P", b"Q")
+            letter: _count_chord(keybinding_data, template % letter)
+            for letter in (b"G", b"N", b"P", b"I")
         }
         after = {
-            letter: patched_keybindings.count(template % letter)
-            for letter in (b"G", b"N", b"P", b"Q")
+            letter: _count_chord(patched_keybindings, template % letter)
+            for letter in (b"G", b"N", b"P", b"I")
         }
-        expected = {b"G": before[b"P"], b"N": 0, b"P": before[b"N"], b"Q": before[b"G"]}
+        expected = {b"G": before[b"P"], b"N": 0, b"P": before[b"N"], b"I": before[b"G"]}
         if after != expected:
             print(f"  [FAIL] Chord display counts did not rotate ({template!r}) for v{ver} ({arch})")
             return False
@@ -379,10 +491,10 @@ def fetch_latest_version() -> str:
     return match.group(1)
 
 
-def test_version(ver: str) -> bool:
+def test_version(ver: str, prefer_cached: bool = False) -> bool:
     print(f"Testing release v{ver} (both AVX2 and baseline)...")
     for arch in ARCH_VARIANTS:
-        if not test_variant(ver, arch):
+        if not test_variant(ver, arch, prefer_cached=prefer_cached):
             return False
     return True
 
@@ -391,6 +503,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Multi-version and synthetic test suite for Droid patcher")
     parser.add_argument("--offline", action="store_true", help="Run only offline synthetic fixture tests")
     parser.add_argument("--latest", action="store_true", help="Fetch and include the latest upstream release")
+    parser.add_argument("--cached", action="store_true", help="Prefer local cached binaries from .tmp/factory-releases")
     parser.add_argument("versions", nargs="*", help="Optional specific version(s) to test")
     args = parser.parse_args()
 
@@ -411,7 +524,7 @@ def main() -> int:
     print(f"Running multi-version validation across {len(versions)} releases ({', '.join(ARCH_VARIANTS)})...")
     failed = 0
     for v in versions:
-        if not test_version(v):
+        if not test_version(v, prefer_cached=args.cached):
             failed += 1
 
     print("\n" + "=" * 60)

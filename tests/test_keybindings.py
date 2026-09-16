@@ -200,7 +200,8 @@ def test_rotates_editor_model_and_queue_bindings() -> None:
     assert b'modelCycle:{id:"model-cycle",label:"Ctrl+P",matcher:(H)=>Ps1(H,"p")}' in patched
     # Help/hint rotation across every human chord style.
     assert b'editorOverflowHint:"Ctrl+G to open in editor"' in patched
-    assert b"Ctrl+Q to pull top" in patched
+    assert b"Ctrl+I to pull top" in patched
+    assert b"Ctrl+Q to pull top" not in patched
     assert b"Ctrl+G to pull top" not in patched
     assert b'"Ctrl + G for editor"' in patched
     assert b'"Ctrl + P for model cycle"' in patched
@@ -235,9 +236,9 @@ def test_display_counts_permute() -> None:
     patched = patch_keybindings.apply_patch_bytes(original)
 
     for template in (b"Ctrl+%s", b"Ctrl + %s", b"ctrl+%s", b"Ctrl-%s"):
-        before = {letter: original.count(template % letter) for letter in (b"G", b"N", b"P", b"Q")}
-        after = {letter: patched.count(template % letter) for letter in (b"G", b"N", b"P", b"Q")}
-        expected = {b"G": before[b"P"], b"N": 0, b"P": before[b"N"], b"Q": before[b"G"]}
+        before = {letter: original.count(template % letter) for letter in (b"G", b"N", b"P", b"I")}
+        after = {letter: patched.count(template % letter) for letter in (b"G", b"N", b"P", b"I")}
+        expected = {b"G": before[b"P"], b"N": 0, b"P": before[b"N"], b"I": before[b"G"]}
         assert after == expected, f"display counts did not rotate for {template!r}: {before} -> {after}"
 
 
