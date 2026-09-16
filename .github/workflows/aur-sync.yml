@@ -163,9 +163,9 @@ jobs:
       - name: Run security audit via aurscan
         if: steps.check_version.outputs.run_ci == 'true'
         run: |
-          echo "==> Fetching pinned aurscan v0.9.0 security scanner..."
-          sudo curl -fsSL https://github.com/manticore-projects/aurscan/releases/download/v0.9.0/aurscan-linux-amd64 -o /usr/local/bin/aurscan
-          echo "07659ff14b7f416a8aaf254175138ed464947922d483081f837dc41a2e2424c5  /usr/local/bin/aurscan" | sha256sum -c
+          echo "==> Fetching pinned aurscan v0.9.1 security scanner..."
+          sudo curl -fsSL https://github.com/manticore-projects/aurscan/releases/download/v0.9.1/aurscan-linux-amd64 -o /usr/local/bin/aurscan
+          echo "2edb094a0cc69a2bc20bc6a9e3d4c16969306e09507be112de285a0ac68d5b70  /usr/local/bin/aurscan" | sha256sum -c
           sudo chmod +x /usr/local/bin/aurscan
           echo "==> Running static rule security audit on repository..."
           aurscan --rules-only .

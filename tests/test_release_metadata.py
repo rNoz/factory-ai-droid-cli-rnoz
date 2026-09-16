@@ -114,7 +114,16 @@ def test_standalone_metadata_update_synchronizes_all_version_fields() -> None:
         srcinfo = (root / ".SRCINFO").read_text()
         assert re.search(r"^\s*pkgver = 0.219.0$", srcinfo, re.MULTILINE)
         assert re.search(r"^\s*pkgrel = 4$", srcinfo, re.MULTILINE)
-        assert "Current package revision:" not in (root / "README.md").read_text()
+        readme = (root / "README.md").read_text()
+        assert "Current package revision:" not in readme
+        # The tested-release table is regenerated as centered HTML between markers.
+        assert readme.count("<!-- tested-releases:start -->") == 1
+        assert readme.count("<!-- tested-releases:end -->") == 1
+        assert '<table align="center">' in readme
+        assert "| linux x86_64 avx2 | linux x86_64 |" not in readme
+        assert 'alt="0.219.0 x64 AVX2"' in readme
+        versions = MODULE.configured_versions()
+        assert f"tested%20releases-{len(versions)}-informational" in readme
 
 
 def test_srcinfo_revision_tracks_package_metadata() -> None:
@@ -138,9 +147,11 @@ def test_readme_has_single_license_section_and_nested_test_matrix() -> None:
     assert "Current package revision:" not in text
 
 
-def test_ci_badge_uses_shields_endpoint() -> None:
+def test_ci_badge_reflects_real_workflow_status() -> None:
     text = MODULE.README.read_text()
-    assert "img.shields.io/badge/CI%20Build%20%26%20Security-passing-brightgreen" in text
+    badge = "github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml/badge.svg"
+    assert badge in text
+    assert "img.shields.io/badge/CI%20Build%20%26%20Security-passing" not in text
     assert "github/actions/workflow/status/" not in text
 
 
@@ -210,8 +221,8 @@ def test_metadata_agrees_on_version_and_revision() -> None:
     assert "Current package revision:" not in readme
     versions = MODULE.configured_versions()
     assert version in versions
-    assert f"[![{version} x64 AVX2]" in readme
-    assert re.search(rf"tested%20releases-{len(versions)}%20", readme)
+    assert f'alt="{version} x64 AVX2"' in readme
+    assert re.search(rf"tested%20releases-{len(versions)}-informational", readme)
 
 
 def test_release_repair_guards_are_pinned() -> None:
@@ -352,7 +363,7 @@ if __name__ == "__main__":
     test_srcinfo_revision_tracks_package_metadata()
     test_pkgbuild_checksums_match_packaged_sources()
     test_readme_has_single_license_section_and_nested_test_matrix()
-    test_ci_badge_uses_shields_endpoint()
+    test_ci_badge_reflects_real_workflow_status()
     test_release_automation_uses_merge_gated_prs()
     test_upgrade_notice_reports_the_installed_version()
     test_metadata_agrees_on_version_and_revision()

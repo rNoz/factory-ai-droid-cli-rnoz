@@ -97,26 +97,39 @@ def update_version_list(version: str) -> None:
 def badge(version: str, architecture: str, color: str) -> str:
     label = f"{version}-{architecture}".replace(" ", "%20")
     url = "https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml"
-    return f"[![{version} {architecture}](https://img.shields.io/badge/{label}-{color})]({url})"
+    return (
+        f'<a href="{url}">'
+        f'<img src="https://img.shields.io/badge/{label}-{color}" alt="{version} {architecture}" />'
+        f"</a>"
+    )
 
 
 def update_readme(version: str, pkgrel: int) -> None:
     text = README.read_text()
-    table_start = text.index("| linux x86_64 avx2 | linux x86_64 |")
-    table_end = text.find("\n\n", table_start)
-    if table_end == -1:
-        raise RuntimeError("tested-release table terminator not found")
+    start_marker = "<!-- tested-releases:start -->"
+    end_marker = "<!-- tested-releases:end -->"
+    # GitHub renders tables as display:block, so only a raw HTML table with
+    # align="center" actually centers; markdown tables ignore ancestor text-align.
+    table_start = text.index(start_marker) + len(start_marker)
+    table_end = text.index(end_marker)
     versions = configured_versions()
-    table = "\n".join(
-        ["| linux x86_64 avx2 | linux x86_64 |", "| :-- | :-- |"]
-        + [
-            f"| {badge(item, 'x64 AVX2', 'brightgreen')} | "
-            f"{badge(item, 'x64 baseline', 'brightgreen')} |"
-            for item in versions
-        ]
+    rows = "\n".join(
+        f'    <tr><td>{badge(item, "x64 AVX2", "brightgreen")}</td>'
+        f'<td>{badge(item, "x64 baseline", "brightgreen")}</td></tr>'
+        for item in versions
+    )
+    table = (
+        '\n<table align="center">\n'
+        "  <thead>\n"
+        "    <tr><th>linux x86_64 avx2</th><th>linux x86_64</th></tr>\n"
+        "  </thead>\n"
+        "  <tbody>\n"
+        f"{rows}\n"
+        "  </tbody>\n"
+        "</table>\n"
     )
     text = text[:table_start] + table + text[table_end:]
-    text = re.sub(r"tested%20releases-[0-9]+%20", f"tested%20releases-{len(versions)}%20", text, count=1)
+    text = re.sub(r"tested%20releases-[0-9]+", f"tested%20releases-{len(versions)}", text, count=1)
     README.write_text(text)
 
 
