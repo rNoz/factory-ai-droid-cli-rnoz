@@ -39,6 +39,12 @@
 
 Applied in place by `patches/patch_keybindings.py` at identical byte length; any unknown or partially patched layout aborts the patch. Interactive `makepkg` and `scripts/patch-macos.sh` ask before each patch (default `[Y]`); non-interactive runs apply both. The macOS script smoke-tests `droid --version` after all selected patches and asks before removing its backup (default `[Y]`).
 
+The runtime registry is patched along with the visible keymap, so `Ctrl-P` is
+no longer retained as the old editor descriptor and `Ctrl-I` resolves through
+the same matcher path as the direct dispatch. `Ctrl-I` requires a terminal
+that forwards modified keys using Kitty/CSI-u (for example Alacritty with
+tmux `extended-keys on`); legacy terminals encode it as `Tab`.
+
 ---
 
 ## Supported Architectures & Platforms

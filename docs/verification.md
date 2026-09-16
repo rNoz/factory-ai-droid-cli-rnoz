@@ -22,6 +22,18 @@ python3 patches/patch_keybindings.py /tmp/droid-keybindings --test
 /tmp/droid-keybindings
 ```
 
+For an installed binary, verify that the runtime registry is included in the
+same safe rotation rather than relying only on the `--version` smoke test:
+
+```bash
+python3 patches/patch_keybindings.py /usr/lib/factory/droid --dry-run
+```
+
+When evaluating `Ctrl-I` interactively, use a terminal path that preserves
+modified-key information (for example Alacritty with tmux `extended-keys on`
+and CSI-u/Kitty forwarding). Legacy terminals encode `Ctrl-I` as the same
+byte as `Tab`, so no application-level patch can distinguish those inputs.
+
 Run the repository checks:
 
 ```bash

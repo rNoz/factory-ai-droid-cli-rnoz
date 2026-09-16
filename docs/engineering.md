@@ -6,9 +6,10 @@
   `isNonInteractiveCLIMode()` guard using surrounding title markers and replaces
   it with a same-length JavaScript comment. It never relies on a fixed offset.
 - **Keybinding patch:** `patches/patch_keybindings.py` cross-validates the
-  serialized keymap, guarded runtime dispatch, model matcher, and human-facing
-  chord hints before changing anything. It rotates editor → `Ctrl-G`, model
-  cycling → `Ctrl-P`, and queued-message pull → `Ctrl-I`.
+  serialized keymap, guarded runtime dispatch, generic runtime key-ID
+  registry, model matcher, and human-facing chord hints before changing
+  anything. It rotates editor → `Ctrl-G`, model cycling → `Ctrl-P`, and
+  queued-message pull → `Ctrl-I`.
 - **Upstream layout compatibility:** Releases through v0.218 use action-linked
   keymap records; v0.219 introduced binary-record keymap entries. Both layouts
   have separate structural validation and idempotent, same-length replacements.
@@ -17,8 +18,17 @@
   compatible.
 - **Fail-closed safety:** Missing, ambiguous, conflicting, or partially patched
   layouts abort before writing. Guards move with their actions, replacements
-  preserve binary length, and a full already-patched layout is required for
-  idempotent acceptance.
+  preserve binary length, runtime string IDs remain resolvable, and a full
+  already-patched layout is required for idempotent acceptance.
+
+## Terminal protocol requirement
+
+The runtime matcher can distinguish `Ctrl-I` from `Tab` only when the terminal
+forwards modified keys through a protocol such as Kitty/CSI-u. The package
+does not claim that distinction on a legacy terminal path where both chords
+arrive as byte `0x09`. Alacritty setups using tmux `extended-keys on` provide
+the required forwarding path; users on legacy terminals should choose another
+queue shortcut rather than expecting `Ctrl-I` to be distinguishable.
 
 ## Packaging behavior
 

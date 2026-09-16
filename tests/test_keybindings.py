@@ -87,6 +87,8 @@ def binary_record_fixture() -> bytes:
         + b"|"
         + binary_record_model_cycle_descriptor()
         + b"|"
+        + runtime_key_registry()
+        + b"|"
         + display_block()
     )
 
@@ -159,6 +161,31 @@ def display_block() -> bytes:
     )
 
 
+def runtime_key_registry() -> bytes:
+    """Generic key-ID registry used by runtime string dispatch resolution."""
+    return (
+        b'var hX={b:"ctrl-b",c:"ctrl-c",d:"ctrl-d",e:"ctrl-e",f:"ctrl-f",'
+        b'g:"ctrl-g",j:"ctrl-j",l:"ctrl-l",n:"ctrl-n",o:"ctrl-o",p:"ctrl-p",'
+        b'r:"ctrl-r",t:"ctrl-t",x:"ctrl-x",y:"ctrl-y",z:"ctrl-z"};'
+        b'function bi(S,T){return{id:hX[S],label:`Ctrl+${S.toUpperCase()}`,'
+        b'matcher:(M)=>Tp(M,{letter:S,disallowBareRawInput:T?.disallowBareRawInput})}}'
+        b'var RX={ctrlB:bi("b"),ctrlG:bi("g"),ctrlP:bi("p"),ctrlR:bi("r"),'
+        b'tab:{id:"tab",label:"Tab",matcher:(S)=>xy(S,{ctrl:!1,meta:!1,shift:!1})}}'
+    )
+
+
+def legacy_runtime_key_registry() -> bytes:
+    """Pre-v0.220 runtime key registry layout with intermediary objects and renamed helper."""
+    return (
+        b'g19={b:"ctrl-b",c:"ctrl-c",d:"ctrl-d",e:"ctrl-e",f:"ctrl-f",'
+        b'g:"ctrl-g",j:"ctrl-j",l:"ctrl-l",n:"ctrl-n",o:"ctrl-o",p:"ctrl-p",'
+        b'r:"ctrl-r",t:"ctrl-t",x:"ctrl-x",y:"ctrl-y",z:"ctrl-z"};'
+        b'q19={upArrow:"up",downArrow:"down",pageUp:"pageup",pageDown:"pagedown"};'
+        b'a19={ctrlB:BR("b"),ctrlC:BR("c"),ctrlG:BR("g"),ctrlP:BR("p"),ctrlR:BR("r"),'
+        b'tab:{id:"tab",label:"Tab",matcher:(H)=>xy(H,{ctrl:!1,meta:!1,shift:!1})}}'
+    )
+
+
 def fixture(**dispatch_options) -> bytes:
     return (
         keymap_table()
@@ -166,6 +193,8 @@ def fixture(**dispatch_options) -> bytes:
         + dispatch_block(**dispatch_options)
         + b"|"
         + model_cycle_descriptor()
+        + b"|"
+        + runtime_key_registry()
         + b"|"
         + display_block()
     )
@@ -215,6 +244,26 @@ def test_rotates_editor_model_and_queue_bindings() -> None:
     assert b'"ctrl+p"' in patched
 
 
+def test_rotates_runtime_key_registry() -> None:
+    patched = patch_keybindings.apply_patch_bytes(fixture())
+
+    assert b'p:"ctrl-p"' not in patched
+    assert b'i:"ctrl-i"' in patched
+    assert b'ctrlP:bi("p")' not in patched
+    assert b'ctrlI:bi("i")' in patched
+
+
+def test_rotates_legacy_runtime_key_registry() -> None:
+    original = fixture().replace(runtime_key_registry(), legacy_runtime_key_registry())
+    patched = patch_keybindings.apply_patch_bytes(original)
+
+    assert b'p:"ctrl-p"' not in patched
+    assert b'i:"ctrl-i"' in patched
+    assert b'ctrlP:BR("p")' not in patched
+    assert b'ctrlI:BR("i")' in patched
+    assert patch_keybindings.apply_patch_bytes(patched) == patched
+
+
 def test_rotates_binary_record_keymap_layout() -> None:
     original = binary_record_fixture()
 
@@ -249,6 +298,18 @@ def test_refuses_ambiguous_bindings() -> None:
 
 
 def test_refuses_unsafe_layouts() -> None:
+    expect_patch_error(fixture().replace(runtime_key_registry(), b""), b"runtime key registry")
+    expect_patch_error(fixture() + runtime_key_registry(), b"runtime key registry")
+    distant_registry = fixture().replace(
+        runtime_key_registry(),
+        b'var hX={b:"ctrl-b",c:"ctrl-c",d:"ctrl-d",e:"ctrl-e",f:"ctrl-f",'
+        b'g:"ctrl-g",j:"ctrl-j",l:"ctrl-l",n:"ctrl-n",o:"ctrl-o",p:"ctrl-p",'
+        b'r:"ctrl-r",t:"ctrl-t",x:"ctrl-x",y:"ctrl-y",z:"ctrl-z"};'
+        + b"X" * 10000
+        + b'var RX={ctrlB:bi("b"),ctrlG:bi("g"),ctrlP:bi("p"),ctrlR:bi("r"),'
+        b'tab:{id:"tab",label:"Tab",matcher:(S)=>xy(S,{ctrl:!1,meta:!1,shift:!1})}}',
+    )
+    expect_patch_error(distant_registry, b"too far apart")
     expect_patch_error(fixture(queue_guard=False), b"guard")
     expect_patch_error(fixture(editor_guard=True), b"guard")
     expect_patch_error(fixture(split=True), b"adjacent")
@@ -256,6 +317,12 @@ def test_refuses_unsafe_layouts() -> None:
 
 def test_refuses_partially_patched_binaries() -> None:
     fully_patched = patch_keybindings.apply_patch_bytes(fixture())
+    stale_runtime_map = fully_patched.replace(b'i:"ctrl-i"', b'p:"ctrl-p"', 1)
+    expect_patch_error(stale_runtime_map, b"runtime key registry")
+    stale_runtime_descriptor = fully_patched.replace(
+        b'ctrlI:bi("i")', b'ctrlP:bi("p")', 1
+    )
+    expect_patch_error(stale_runtime_descriptor, b"runtime key registry")
     # Table and dispatch rotated but the model registry was left on Ctrl-N.
     matcher_unpatched = fully_patched.replace(
         b'modelCycle:{id:"model-cycle",label:"Ctrl+P",matcher:(H)=>Ps1(H,"p")}',
@@ -300,11 +367,27 @@ def test_refuses_structural_matches_across_range_gaps() -> None:
     )
     expect_patch_error(fragmented, b"keymap")
 
+    fragmented_map = fixture().replace(
+        b'p:"ctrl-p"',
+        patch_keybindings.RANGE_GAP + b'p:"ctrl-p"',
+        1,
+    )
+    expect_patch_error(fragmented_map, b"runtime key registry")
+
+    fragmented_desc = fixture().replace(
+        b'ctrlP:bi("p")',
+        b"ctrlP:" + patch_keybindings.RANGE_GAP + b'bi("p")',
+        1,
+    )
+    expect_patch_error(fragmented_desc, b"runtime key registry")
+
 
 def test_tolerates_minified_identifier_renames() -> None:
     renamed = fixture().replace(b"GH", b"Xq").replace(b"hI", b"Zp")
     renamed = renamed.replace(b"Ps1(H,", b"Qz(e,").replace(b"matcher:(H)=>", b"matcher:(e)=>")
     renamed = renamed.replace(b"!tD&&!KI)", b"!tW&&!KO)")
+    renamed = renamed.replace(b'ctrlP:bi("p")', b'ctrlP:helpers.Wq("p",!0)')
+    renamed = renamed.replace(b"function bi(S,T)", b"function Wq(e,F)")
 
     patched = patch_keybindings.apply_patch_bytes(renamed)
 
@@ -312,6 +395,8 @@ def test_tolerates_minified_identifier_renames() -> None:
     assert b'mf({key:ZL,input:_A},"ctrl-g")&&!tW&&!KO)return Zp(),!0;' in patched
     assert b'mf({key:ZL,input:_A},"ctrl-i")&&Xq&&!tW&&!KO)return Xq(),!0;' in patched
     assert b'modelCycle:{id:"model-cycle",label:"Ctrl+P",matcher:(e)=>Qz(e,"p")}' in patched
+    assert b'ctrlI:helpers.Wq("i",!0)' in patched
+    assert b'ctrlP:helpers.Wq("p",!0)' not in patched
 
 
 def test_is_idempotent() -> None:
@@ -336,6 +421,8 @@ def test_patch_report_describes_old_and_new_bindings() -> None:
 if __name__ == "__main__":
     tests = (
         test_rotates_editor_model_and_queue_bindings,
+        test_rotates_runtime_key_registry,
+        test_rotates_legacy_runtime_key_registry,
         test_rotates_binary_record_keymap_layout,
         test_display_counts_permute,
         test_refuses_ambiguous_bindings,
