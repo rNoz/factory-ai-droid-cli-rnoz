@@ -23,7 +23,7 @@ echo "==> Updating .SRCINFO..."
 su builduser -c "makepkg --printsrcinfo > .SRCINFO"
 
 echo "==> Compiling package with makepkg..."
-su builduser -c "makepkg -f --noconfirm"
+su builduser -c "DROID_NONINTERACTIVE=1 makepkg -f --noconfirm"
 
 echo "==> Testing package installation and smoke testing droid binary..."
 package_file="$(find "$build_dir" -maxdepth 1 -name 'factory-ai-droid-cli-rnoz-bin-*.pkg.tar.zst' -print -quit)"

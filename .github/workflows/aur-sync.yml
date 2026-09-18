@@ -317,8 +317,8 @@ jobs:
           python3 scripts/update-release-metadata.py "$UPSTREAM_VER" --set-pkgrel "$PACKAGE_REVISION"
           BRANCH="release/v${UPSTREAM_VER}"
           git switch -C "$BRANCH"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "rNoz"
+          git config user.email "8237539+rNoz@users.noreply.github.com"
           git add PKGBUILD .SRCINFO README.md tests/test_versions.py
           if git diff --cached --quiet; then
             echo "::notice::Release metadata is already current; no release PR is needed."
