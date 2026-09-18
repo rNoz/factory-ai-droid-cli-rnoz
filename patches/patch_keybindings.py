@@ -333,6 +333,7 @@ def _dispatch_matches(
 
 ELF_HEADER = struct.Struct("<16sHHIQQQIHHHHHH")
 SECTION_HEADER = struct.Struct("<IIQQQQIIQQ")
+JSC_CACHE_MAGIC = struct.pack("<I", 0xC33CCB8C)
 
 
 def _invalidate_bun_bytecode_caches(original: bytes, patched: bytes) -> bytes:
@@ -408,11 +409,11 @@ def _invalidate_bun_bytecode_caches(original: bytes, patched: bytes) -> bytes:
 
         if orig_chunk != new_chunk or target_needle in new_chunk:
             bc_abs = base + bc_off
-            if bc_len >= 4 and result[bc_abs : bc_abs + 4] == b"\x8c\xcb\x3c\xc3":
-                result[bc_abs : bc_abs + 4] = b"\x00\x00\x00\x00"
+            if bc_len >= 4 and result[bc_abs : bc_abs + 4] == JSC_CACHE_MAGIC:
+                result[bc_abs : bc_abs + 4] = bytes(4)
 
             hash_slot = hs_base + i * 4
-            result[hash_slot : hash_slot + 4] = b"\x00\x00\x00\x00"
+            result[hash_slot : hash_slot + 4] = bytes(4)
 
     return bytes(result)
 
