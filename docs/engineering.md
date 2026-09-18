@@ -43,6 +43,29 @@ queue shortcut rather than expecting `Ctrl-I` to be distinguishable.
   Apple Silicon macOS is verified through the post-update patch script; Intel
   macOS remains unverified.
 
+### AUR helper interactive prompt detection
+
+Most AUR helpers (`yay`, `paru`, `pikaur`, `aurman`, etc.) invoke `makepkg`
+internally with `--noconfirm` so `pacman` does not prompt when resolving build
+dependencies. In standard `makepkg`, this automatically sets
+`PACMAN_OPTS=("--noconfirm")`. Naively checking `PACMAN_OPTS` inside `PKGBUILD`
+would falsely treat interactive terminal sessions under AUR helpers as headless,
+silently bypassing user confirmation prompts for custom patches (zero-waste
+titling and keybindings).
+
+To balance ease of use and interactive customization:
+1. `PKGBUILD` defines `has_user_noconfirm()`, which inspects ancestor process
+   command lines in `/proc`. If an AUR helper is detected in the process tree,
+   it checks whether `--noconfirm` was genuinely passed by the user to the helper
+   itself, rather than injected by the helper into `makepkg`.
+2. When invoked directly via `makepkg`, it checks `PACMAN_OPTS`.
+3. Explicit automation overrides (`DROID_NONINTERACTIVE=1`, or specific patch
+   toggles `DROID_APPLY_TITLING_PATCH=0/1` and `DROID_APPLY_KEYBINDINGS_PATCH=0/1`)
+   short-circuit inspection immediately.
+4. Container and CI builds (`scripts/build-in-container.sh`) enforce
+   `DROID_NONINTERACTIVE=1`, ensuring headless and automated pipelines are 100%
+   fail-closed without waiting on user input.
+
 ## Release and supply-chain controls
 
 CI runs offline fixtures, the latest upstream x64/baseline matrix, Arch

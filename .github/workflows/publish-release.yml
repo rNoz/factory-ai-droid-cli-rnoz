@@ -131,14 +131,11 @@ jobs:
           python3 scripts/fetch-changelog.py "$UPSTREAM_VER" > /tmp/upstream-notes.md
 
           cat << 'EOF' > /tmp/release-notes.md
-          ## Factory CLI v${PACKAGE_VERSION} (rNoz tweaks)
-
-          ### Upstream Changes & Release Notes
           __UPSTREAM_NOTES__
 
           ---
 
-          ### Package Details
+          ### Package details (rNoz tweaks)
           - **Zero-Waste Titling**: Neutralizes automatic background Claude Haiku 4.5 LLM titling calls on every prompt (optional).
           - **Keybinding Remap**: The default remap is editor `Ctrl-G`, model cycling `Ctrl-P`, and queued-message pull `Ctrl-I` (optional).
           - **Single Lean Binary**: Package contains only one binary compiled/chosen for the target CPU architecture.
