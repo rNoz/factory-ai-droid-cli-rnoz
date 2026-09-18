@@ -328,7 +328,10 @@ def test_publication_uses_healed_metadata_without_dead_copy_paths() -> None:
     publication = PUBLISH_WORKFLOW.read_text()
     assert 'PACKAGE_VERSION="${UPSTREAM_VER}-${PKGREL}"' in publication
     assert "pkgver/pkgrel fields not found" in publication
-    assert "git diff --quiet FETCH_HEAD HEAD -- PKGBUILD .SRCINFO" in publication
+    assert (
+        "git diff --quiet FETCH_HEAD HEAD -- PKGBUILD .SRCINFO "
+        "LICENSE patches/patch_title.py patches/patch_keybindings.py"
+    ) in publication
     assert "skipping AUR publish to avoid regressing AUR" in publication
     assert "if [ -f SRCINFO ]; then" not in publication
 

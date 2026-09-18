@@ -29,6 +29,25 @@ same safe rotation rather than relying only on the `--version` smoke test:
 python3 patches/patch_keybindings.py /usr/lib/factory/droid --dry-run
 ```
 
+For v0.219+ binaries, also verify that the serialized physical-key records
+remain labeled `ctrl-g`, `ctrl-n`, and `ctrl-p`; the patch must move only the
+action dispatch. A binary carrying the previous relabeled-record patch is
+rejected so it cannot preserve the Ctrl-P/Ctrl-G inversion.
+
+To preserve a future release for offline analysis, extract its Bun bundle and
+source-like fragments with the repository tool:
+
+```bash
+python3 scripts/extract-bun-sources.py /usr/lib/factory/droid \
+  --out /tmp/droid-extract --write-fragments
+grep -n -E 'modelCycle|openTextAndWait|sourceMappingURL' \
+  /tmp/droid-extract/searchable.txt
+```
+
+The output includes raw `.bun`/`.rodata` sections, offset-aware printable
+strings, marker offsets, and, when requested, source-like fragments. It does
+not reconstruct the original pre-bundle module tree or decompile native code.
+
 When evaluating `Ctrl-I` interactively, use a terminal path that preserves
 modified-key information (for example Alacritty with tmux `extended-keys on`
 and CSI-u/Kitty forwarding). Legacy terminals encode `Ctrl-I` as the same

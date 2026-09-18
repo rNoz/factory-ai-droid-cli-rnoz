@@ -9,7 +9,9 @@
   serialized keymap, guarded runtime dispatch, generic runtime key-ID
   registry, model matcher, and human-facing chord hints before changing
   anything. It rotates editor → `Ctrl-G`, model cycling → `Ctrl-P`, and
-  queued-message pull → `Ctrl-I`.
+  queued-message pull → `Ctrl-I`. For v0.219+ binary-record tables, the
+  physical key labels and records remain unchanged; only the action dispatch
+  and associated runtime descriptors move.
 - **Upstream layout compatibility:** Releases through v0.218 use action-linked
   keymap records; v0.219 introduced binary-record keymap entries. Both layouts
   have separate structural validation and idempotent, same-length replacements.
@@ -18,8 +20,9 @@
   compatible.
 - **Fail-closed safety:** Missing, ambiguous, conflicting, or partially patched
   layouts abort before writing. Guards move with their actions, replacements
-  preserve binary length, runtime string IDs remain resolvable, and a full
-  already-patched layout is required for idempotent acceptance.
+  preserve binary length, runtime string IDs remain resolvable, and an old
+  binary-record state with relabeled physical keys is rejected rather than
+  remapped again.
 
 ## Terminal protocol requirement
 

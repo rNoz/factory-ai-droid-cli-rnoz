@@ -123,7 +123,8 @@ cd factory-ai-droid-cli-rnoz
 │   ├── patch-macos.sh                    # Standalone macOS patcher with backup rotation
 │   ├── build-local.sh                    # Temporary-workspace local Arch package build
 │   ├── build-in-container.sh             # Isolated Arch Linux container build script
-│   └── fetch-changelog.py                # Upstream release notes scraper
+│   ├── fetch-changelog.py                # Upstream release notes scraper
+│   └── extract-bun-sources.py            # ELF/Bun forensic extractor for release analysis
 └── tests/
     ├── test_versions.py                  # Fetch/retest title and keybinding patches across releases
     ├── test_keybindings.py               # Offline keymap rotation and help-text fixtures

@@ -270,14 +270,29 @@ def test_rotates_binary_record_keymap_layout() -> None:
     patched = patch_keybindings.apply_patch_bytes(original)
 
     assert len(patched) == len(original)
-    assert binary_record(b"ctrl-i", 6, b"CCCC") in patched
-    assert binary_record(b"ctrl-g", 6, b"EEEE") in patched
-    assert binary_record(b"ctrl-p", 6, b"DDDD") in patched
-    assert binary_record(b"ctrl-n", 6, b"DDDD") not in patched
+    # Binary records carry physical key data; their labels must not be rotated.
+    assert binary_record(b"ctrl-g", 6, b"CCCC") in patched
+    assert binary_record(b"ctrl-n", 6, b"DDDD") in patched
+    assert binary_record(b"ctrl-p", 6, b"EEEE") in patched
+    assert b"ctrl-i\x00" not in patched.split(b"|", 1)[0]
     assert b'ia({key:Qn,input:Br},"ctrl-i")&&Ee&&!pi&&!Kr)return Ee(),!0;' in patched
     assert b'ia({key:Qn,input:Br},"ctrl-g")&&!pi&&!Kr)return Go(),!0;' in patched
     assert b'modelCycle:{id:"model-cycle",label:"Ctrl+P",matcher:(e)=>S8l(e,"p")}' in patched
     assert patch_keybindings.apply_patch_bytes(patched) == patched
+
+
+def test_refuses_old_binary_record_double_remap() -> None:
+    patched = patch_keybindings.apply_patch_bytes(binary_record_fixture())
+    keymap, remainder = patched.split(b"|", 1)
+    incorrectly_remapped = (
+        keymap.replace(b"ctrl-g\x00", b"ctrl-i\x00", 1)
+        .replace(b"ctrl-p\x00", b"ctrl-g\x00", 1)
+        .replace(b"ctrl-n\x00", b"ctrl-p\x00", 1)
+    )
+    expect_patch_error(
+        incorrectly_remapped + b"|" + remainder,
+        b"physical key labels",
+    )
 
 
 def test_display_counts_permute() -> None:
