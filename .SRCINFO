@@ -22,7 +22,7 @@ pkgbase = factory-ai-droid-cli-rnoz-bin
 	source = factory-ai-droid-cli-rnoz-bin.install
 	source = LICENSE
 	sha256sums = 6f8fc3992526e8c8b0a4af11f029a633498f7704e9c6a736e772788d18243d00
-	sha256sums = 156124862b4abf65243157c247d12de79c194104c5c6997d9a6f8a75bb1787e6
+	sha256sums = 55abb3f645848b4366c271b0c635594a3ffc59e106ed66955cfc869e55684dd3
 	sha256sums = ca5befcf6fe0b388af9b4960050fc7e3d8cc6d1ec7be49fc88b3f88fe40d471d
 	sha256sums = 24d17bcf4f621c0d2bc1288e87596097f3489cd3d176deba1c03f468126c8004
 

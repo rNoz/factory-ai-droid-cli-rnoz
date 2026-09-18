@@ -190,17 +190,10 @@ def _patch_runtime_key_registry(data: bytes) -> bytes:
 
 
 def _apply_binary_record_patch(data: bytes, keymap: tuple[int, int, int]) -> bytes:
-    """Rotate v0.219 dispatch statements without relabeling physical records."""
+    """Rotate the v0.219 keymap and its direct runtime dispatch statements."""
     queue_key_start, editor_key_start, _ = keymap
-    physical_queue_key = data[queue_key_start : queue_key_start + len(b"ctrl-g")]
-    physical_editor_key = data[editor_key_start : editor_key_start + len(b"ctrl-p")]
-    if physical_queue_key == b"ctrl-i" or physical_editor_key == b"ctrl-g":
-        raise PatchError(
-            "binary-record physical key labels are already remapped; refusing unsafe double remap"
-        )
-    if physical_queue_key != b"ctrl-g" or physical_editor_key != b"ctrl-p":
-        raise PatchError("binary-record keymap has unknown physical key labels")
-    _find_binary_model_key(data, keymap, b"ctrl-n")
+    patched = data[queue_key_start : queue_key_start + len(b"ctrl-i")] == b"ctrl-i"
+    model_key = _find_binary_model_key(data, keymap, b"ctrl-p" if patched else b"ctrl-n")
     model_cycle = _model_cycle_matches(data)
     dispatch_g = _dispatch_matches(data, b"ctrl-g")
     dispatch_p = _dispatch_matches(data, b"ctrl-p")
@@ -219,6 +212,9 @@ def _apply_binary_record_patch(data: bytes, keymap: tuple[int, int, int]) -> byt
         ):
             _ensure_disjoint_spans(
                 [
+                    (queue_key_start, queue_key_start + len(b"ctrl-i")),
+                    (editor_key_start, editor_key_start + len(b"ctrl-g")),
+                    (model_key, model_key + len(b"ctrl-p")),
                     (dispatch_g[0][0], dispatch_g[0][1]),
                     (dispatch_i[0][0], dispatch_i[0][1]),
                     model_match.span(),
@@ -242,6 +238,9 @@ def _apply_binary_record_patch(data: bytes, keymap: tuple[int, int, int]) -> byt
         raise PatchError("binary-record model registry is partially patched or unknown")
     _ensure_disjoint_spans(
         [
+            (queue_key_start, queue_key_start + len(b"ctrl-g")),
+            (editor_key_start, editor_key_start + len(b"ctrl-p")),
+            (model_key, model_key + len(b"ctrl-n")),
             (g_start, p_end),
             model_match.span(),
         ]
@@ -254,6 +253,9 @@ def _apply_binary_record_patch(data: bytes, keymap: tuple[int, int, int]) -> byt
         raise PatchError("binary-record dispatch rotation changed binary size")
 
     patched = bytearray(data)
+    patched[queue_key_start : queue_key_start + len(b"ctrl-g")] = b"ctrl-i"
+    patched[editor_key_start : editor_key_start + len(b"ctrl-p")] = b"ctrl-g"
+    patched[model_key : model_key + len(b"ctrl-n")] = b"ctrl-p"
     patched[g_start:p_end] = dispatch_replacement
     mc_start, mc_end = model_match.span()
     patched[mc_start:mc_end] = model_match.group(0).replace(b',"n")}', b',"p")}', 1)
@@ -334,10 +336,9 @@ def apply_patch_bytes(data: bytes) -> bytes:
     binary_keymap = _find_binary_record_keymap(data, patched=False)
     if binary_keymap:
         return _apply_binary_record_patch(data, binary_keymap)
-    if _find_binary_record_keymap(data, patched=True):
-        raise PatchError(
-            "binary-record physical key labels are already remapped; refusing unsafe double remap"
-        )
+    patched_binary_keymap = _find_binary_record_keymap(data, patched=True)
+    if patched_binary_keymap:
+        return _apply_binary_record_patch(data, patched_binary_keymap)
 
     keymap_match = _find_keymap(data)
     start, end = keymap_match.span()

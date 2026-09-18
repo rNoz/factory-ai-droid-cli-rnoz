@@ -29,11 +29,6 @@ same safe rotation rather than relying only on the `--version` smoke test:
 python3 patches/patch_keybindings.py /usr/lib/factory/droid --dry-run
 ```
 
-For v0.219+ binaries, also verify that the serialized physical-key records
-remain labeled `ctrl-g`, `ctrl-n`, and `ctrl-p`; the patch must move only the
-action dispatch. A binary carrying the previous relabeled-record patch is
-rejected so it cannot preserve the Ctrl-P/Ctrl-G inversion.
-
 To preserve a future release for offline analysis, extract its Bun bundle and
 source-like fragments with the repository tool:
 
