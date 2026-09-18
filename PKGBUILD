@@ -37,9 +37,38 @@ package() {
   apply_patch_if_requested() {
     local label="$1"
     local patcher="$2"
-    if [[ -t 0 && -t 1 ]]; then
+
+    local env_name=""
+    if [[ "$label" == *"titling"* ]]; then
+      env_name="DROID_APPLY_TITLING_PATCH"
+    elif [[ "$label" == *"keybinding"* ]]; then
+      env_name="DROID_APPLY_KEYBINDINGS_PATCH"
+    fi
+
+    if [[ -n "$env_name" && -n "${!env_name:-}" ]]; then
+      if [[ "${!env_name}" =~ ^[Nn0]$ ]]; then
+        msg2 "Skipping ${label} patch (forced via ${env_name})."
+        return 0
+      elif [[ "${!env_name}" =~ ^[Yy1]$ ]]; then
+        msg2 "Applying ${label} patch (forced via ${env_name})."
+        python3 "$patcher" "$output_bin" --test
+        return 0
+      fi
+    fi
+
+    local is_interactive=0
+    if [[ " ${PACMAN_OPTS[*]:-} " =~ " --noconfirm " || "${DROID_NONINTERACTIVE:-0}" == "1" ]]; then
+      is_interactive=0
+    elif [[ -t 0 && -t 1 ]]; then
+      is_interactive=1
+    elif (exec </dev/tty && exec >/dev/tty) 2>/dev/null; then
+      is_interactive=1
+    fi
+
+    if (( is_interactive )); then
       local answer
-      read -r -p "Apply ${label} patch? [Y/n] " answer </dev/tty
+      printf "Apply %s patch? [Y/n] " "$label" >/dev/tty
+      read -r answer </dev/tty
       if [[ "$answer" =~ ^[Nn]$ ]]; then
         msg2 "Skipping ${label} patch (requested interactively)."
         return 0

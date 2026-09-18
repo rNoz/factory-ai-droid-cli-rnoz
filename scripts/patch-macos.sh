@@ -57,16 +57,34 @@ fi
 INTERACTIVE=false
 if [[ -t 0 && -t 1 ]]; then
   INTERACTIVE=true
+elif (exec </dev/tty && exec >/dev/tty) 2>/dev/null; then
+  INTERACTIVE=true
 fi
 
 should_apply_patch() {
   local label="$1"
+  local env_name=""
+  if [[ "$label" == *"titling"* ]]; then
+    env_name="DROID_APPLY_TITLING_PATCH"
+  elif [[ "$label" == *"keybinding"* ]]; then
+    env_name="DROID_APPLY_KEYBINDINGS_PATCH"
+  fi
+
+  if [[ -n "$env_name" && -n "${!env_name:-}" ]]; then
+    if [[ "${!env_name}" =~ ^[Nn0]$ ]]; then
+      return 1
+    elif [[ "${!env_name}" =~ ^[Yy1]$ ]]; then
+      return 0
+    fi
+  fi
+
   if [[ "$INTERACTIVE" != true ]]; then
     return 0
   fi
 
   local answer
-  read -r -p "Apply ${label} patch? [Y/n] " answer </dev/tty
+  printf "Apply %s patch? [Y/n] " "$label" >/dev/tty
+  read -r answer </dev/tty
   [[ ! "$answer" =~ ^[Nn]$ ]]
 }
 
