@@ -23,6 +23,7 @@ __pycache__/
 .overlay/
 .tokensave/
 .privacy-audit/
+.private/
 **/AGENTS.local.md
 **/CLAUDE.local.md
 **/GEMINI.local.md
