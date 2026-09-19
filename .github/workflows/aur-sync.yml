@@ -46,6 +46,7 @@ jobs:
     if: github.event_name != 'workflow_dispatch' || github.actor == github.repository_owner
     permissions:
       contents: read
+      issues: read
     outputs:
       should_build: ${{ steps.check_version.outputs.should_build }}
       run_ci: ${{ steps.check_version.outputs.run_ci }}
@@ -70,6 +71,8 @@ jobs:
 
       - name: Detect and validate upstream Factory CLI version
         id: check_version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -n "${{ inputs.upstream_version }}" ]; then
             UPSTREAM_RAW=$(python3 scripts/check-upstream-version.py --override "${{ inputs.upstream_version }}")
@@ -123,9 +126,19 @@ jobs:
             RUN_CI=false
             echo "Scheduled run found no upstream change; skipping validation and build."
           fi
+          if [ "${{ github.event_name }}" = "schedule" ] && [ "$RUN_CI" = "true" ]; then
+            OPEN_BREAKAGE=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+              --label "upstream-breakage" --state open --json title --jq '.[].title')
+            if printf '%s\n' "$OPEN_BREAKAGE" | grep -Fxq "Upstream Compatibility Validation Failure: Factory CLI v${TARGET_VERSION}"; then
+              RUN_CI=false
+              echo "Scheduled run skipped: open upstream-breakage issue for v${TARGET_VERSION}."
+            fi
+          fi
           echo "run_ci=$RUN_CI" >> $GITHUB_OUTPUT
 
-          if [ "$TARGET_VERSION" != "$CURRENT_VER" ] || [ "${{ inputs.force_build }}" = "true" ] ||
+          if [ "$RUN_CI" = "false" ] && [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          elif [ "$TARGET_VERSION" != "$CURRENT_VER" ] || [ "${{ inputs.force_build }}" = "true" ] ||
              [ "${{ github.event_name }}" = "pull_request" ] || [ "$PACKAGE_CHANGE" = "true" ] ||
              [ -n "$REQUESTED_REL" ]; then
             echo "should_build=true" >> $GITHUB_OUTPUT
@@ -175,6 +188,8 @@ jobs:
         run: |
           echo "==> Running offline synthetic patcher fixtures..."
           python3 tests/test_versions.py --offline
+          echo "==> Running missing-cluster harvest fixtures..."
+          python3 tests/test_harvest.py
           echo "==> Running keybinding rotation fixture tests..."
           python3 tests/test_keybindings.py
           echo "==> Running breakage & recovery simulation suite..."

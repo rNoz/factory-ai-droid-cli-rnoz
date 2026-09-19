@@ -16,6 +16,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "patches"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import patch_keybindings  # noqa: E402
 
 # Test releases covering major engine and minification changes
@@ -115,6 +116,34 @@ def merge_range_data(
     if overlap and second_data[second_overlap_start : second_overlap_start + overlap] != first_data[:overlap]:
         raise ValueError("overlapping byte ranges changed between requests")
     return second_data + first_data[overlap:]
+
+
+def assemble_range_windows(windows: list[tuple[int, bytes]]) -> bytes:
+    """Join ordered byte windows, inserting RANGE_GAP only for true holes."""
+    if not windows:
+        raise ValueError("no byte windows to assemble")
+    ordered = sorted(windows, key=lambda item: item[0])
+    cursor_start, assembled = ordered[0]
+    cursor_end = cursor_start + len(assembled)
+    segment_base = 0
+    for start, blob in ordered[1:]:
+        end = start + len(blob)
+        if start > cursor_end:
+            assembled += patch_keybindings.RANGE_GAP + blob
+            segment_base = len(assembled) - len(blob)
+            cursor_start, cursor_end = start, end
+            continue
+        if end <= cursor_end:
+            overlap_off = segment_base + (start - cursor_start)
+            if assembled[overlap_off : overlap_off + len(blob)] != blob:
+                raise ValueError("overlapping byte ranges changed between requests")
+            continue
+        overlap = cursor_end - start
+        if overlap and assembled[-overlap:] != blob[:overlap]:
+            raise ValueError("overlapping byte ranges changed between requests")
+        assembled += blob[max(overlap, 0) :]
+        cursor_end = end
+    return assembled
 
 
 def _validate_range_response(
@@ -241,6 +270,24 @@ def test_synthetic_fixtures() -> bool:
     if merge_range_data(b"234", 2, b"0123456789", 0) != b"0123456789":
         print("  [FAIL] Synthetic fixture: reverse nested range was not merged")
         return False
+    three = assemble_range_windows([(4, b"EF"), (10, b"YZ"), (20, b"AB")])
+    expected_three = b"EF" + patch_keybindings.RANGE_GAP + b"YZ" + patch_keybindings.RANGE_GAP + b"AB"
+    if three != expected_three:
+        print("  [FAIL] Synthetic fixture: three disjoint windows were not assembled")
+        return False
+    if assemble_range_windows([(0, b"0123456789"), (2, b"234"), (8, b"89")]) != b"0123456789":
+        print("  [FAIL] Synthetic fixture: overlapping window set was not assembled")
+        return False
+    try:
+        nested_after_gap = assemble_range_windows(
+            [(0, b"AAAA"), (10, b"BBBB"), (12, b"BB")]
+        )
+    except ValueError:
+        print("  [FAIL] Synthetic fixture: contained window after a gap was rejected")
+        return False
+    if nested_after_gap != b"AAAA" + patch_keybindings.RANGE_GAP + b"BBBB":
+        print("  [FAIL] Synthetic fixture: contained window after a gap was assembled wrong")
+        return False
     _validate_range_response(b"ABCD", 206, "bytes 10-13/20", "4")
     _validate_range_response(b"ABCD", 200, "", "4")
     for response in (
@@ -256,6 +303,266 @@ def test_synthetic_fixtures() -> bool:
         print("  [FAIL] Synthetic fixture: malformed range response was accepted")
         return False
     print("  [PASS] Synthetic fixture: range overlap and gap handling are fail-safe")
+
+    # 6. Title guard lives before the last-60MB tail. The last-60MB slice
+    # must not invent a match, and title-window discovery must recover the
+    # unique contextual guard without loosening the pattern.
+    guard = (
+        b"function generateTitle(){let firstUserText='hi';"
+        b"if(Ue().isNonInteractiveCLIMode())return null;"
+        b"return formatTitle(res);}"
+    )
+    guard_at = 1_048_576
+    tail_start = 70_000_000
+    total_size = tail_start + 1_000
+    tail_slice = b"\x00" * 1_000
+    if find_valid_matches(tail_slice):
+        print("  [FAIL] Synthetic fixture: empty tail slice produced a title match")
+        return False
+
+    original_fetch_range = fetch_range
+
+    def fake_fetch_range(url: str, range_header: str, retries: int = 3):
+        match = re.fullmatch(r"bytes=(\d+)-(\d+)", range_header)
+        if not match:
+            raise ValueError(f"unexpected range header: {range_header}")
+        start, end = int(match.group(1)), int(match.group(2))
+        length = end - start + 1
+        blob = bytearray(length)
+        guard_end = guard_at + len(guard)
+        overlap_start = max(start, guard_at)
+        overlap_end = min(end + 1, guard_end)
+        if overlap_start < overlap_end:
+            src = overlap_start - guard_at
+            dst = overlap_start - start
+            span = overlap_end - overlap_start
+            blob[dst : dst + span] = guard[src : src + span]
+        return bytes(blob), f"bytes {start}-{end}/{total_size}", 206
+
+    try:
+        globals()["fetch_range"] = fake_fetch_range
+        discovered = discover_title_window("https://example.invalid/droid", total_size, tail_start)
+    finally:
+        globals()["fetch_range"] = original_fetch_range
+
+    if discovered is None:
+        print("  [FAIL] Synthetic fixture: title window before tail was not discovered")
+        return False
+    window_start, window_len = discovered
+    if not (window_start <= guard_at < window_start + window_len):
+        print("  [FAIL] Synthetic fixture: discovered title window missed the guard")
+        return False
+    print("  [PASS] Synthetic fixture: title window discovery recovers a pre-tail guard")
+
+    uncontextual = b"if(Ue().isNonInteractiveCLIMode())return null;"
+    uncontextual_at = 2_097_152
+
+    def fake_fetch_uncontextual(url: str, range_header: str, retries: int = 3):
+        match = re.fullmatch(r"bytes=(\d+)-(\d+)", range_header)
+        if not match:
+            raise ValueError(f"unexpected range header: {range_header}")
+        start, end = int(match.group(1)), int(match.group(2))
+        length = end - start + 1
+        blob = bytearray(length)
+        payload_end = uncontextual_at + len(uncontextual)
+        overlap_start = max(start, uncontextual_at)
+        overlap_end = min(end + 1, payload_end)
+        if overlap_start < overlap_end:
+            src = overlap_start - uncontextual_at
+            dst = overlap_start - start
+            span = overlap_end - overlap_start
+            blob[dst : dst + span] = uncontextual[src : src + span]
+        return bytes(blob), f"bytes {start}-{end}/{total_size}", 206
+
+    try:
+        globals()["fetch_range"] = fake_fetch_uncontextual
+        rejected = discover_title_window("https://example.invalid/droid", total_size, tail_start)
+    finally:
+        globals()["fetch_range"] = original_fetch_range
+
+    if rejected is not None:
+        print("  [FAIL] Synthetic fixture: uncontextual pre-tail guards were accepted")
+        return False
+    print("  [PASS] Synthetic fixture: title window discovery stays fail-closed without context")
+
+    # 7. Runtime key registry lives before the last-60MB tail. Discovery must
+    # recover the unique map without accepting an uncontextual ctrl-p token.
+    runtime_map = (
+        b'var hX={b:"ctrl-b",c:"ctrl-c",d:"ctrl-d",e:"ctrl-e",f:"ctrl-f",'
+        b'g:"ctrl-g",j:"ctrl-j",l:"ctrl-l",n:"ctrl-n",o:"ctrl-o",p:"ctrl-p",'
+        b'r:"ctrl-r",t:"ctrl-t",x:"ctrl-x",y:"ctrl-y",z:"ctrl-z"};'
+    )
+    runtime_at = 3_145_728
+
+    def fake_fetch_runtime(url: str, range_header: str, retries: int = 3):
+        match = re.fullmatch(r"bytes=(\d+)-(\d+)", range_header)
+        if not match:
+            raise ValueError(f"unexpected range header: {range_header}")
+        start, end = int(match.group(1)), int(match.group(2))
+        length = end - start + 1
+        blob = bytearray(length)
+        payload_end = runtime_at + len(runtime_map)
+        overlap_start = max(start, runtime_at)
+        overlap_end = min(end + 1, payload_end)
+        if overlap_start < overlap_end:
+            src = overlap_start - runtime_at
+            dst = overlap_start - start
+            span = overlap_end - overlap_start
+            blob[dst : dst + span] = runtime_map[src : src + span]
+        return bytes(blob), f"bytes {start}-{end}/{total_size}", 206
+
+    try:
+        globals()["fetch_range"] = fake_fetch_runtime
+        discovered_runtime = discover_runtime_window(
+            "https://example.invalid/droid", total_size, tail_start
+        )
+    finally:
+        globals()["fetch_range"] = original_fetch_range
+
+    if discovered_runtime is None:
+        print("  [FAIL] Synthetic fixture: runtime window before tail was not discovered")
+        return False
+    runtime_start, runtime_len = discovered_runtime
+    if not (runtime_at <= runtime_start < runtime_at + len(runtime_map)):
+        print("  [FAIL] Synthetic fixture: discovered runtime window missed the registry")
+        return False
+    if runtime_len != len(RUNTIME_MAP_MARKER):
+        print("  [FAIL] Synthetic fixture: discovered runtime window used an unexpected length")
+        return False
+    print("  [PASS] Synthetic fixture: runtime window discovery recovers a pre-tail registry")
+
+    lone_ctrl_p = b'p:"ctrl-p"'
+    lone_at = 4_194_304
+
+    def fake_fetch_lone_ctrl_p(url: str, range_header: str, retries: int = 3):
+        match = re.fullmatch(r"bytes=(\d+)-(\d+)", range_header)
+        if not match:
+            raise ValueError(f"unexpected range header: {range_header}")
+        start, end = int(match.group(1)), int(match.group(2))
+        length = end - start + 1
+        blob = bytearray(length)
+        payload_end = lone_at + len(lone_ctrl_p)
+        overlap_start = max(start, lone_at)
+        overlap_end = min(end + 1, payload_end)
+        if overlap_start < overlap_end:
+            src = overlap_start - lone_at
+            dst = overlap_start - start
+            span = overlap_end - overlap_start
+            blob[dst : dst + span] = lone_ctrl_p[src : src + span]
+        return bytes(blob), f"bytes {start}-{end}/{total_size}", 206
+
+    try:
+        globals()["fetch_range"] = fake_fetch_lone_ctrl_p
+        rejected_runtime = discover_runtime_window(
+            "https://example.invalid/droid", total_size, tail_start
+        )
+    finally:
+        globals()["fetch_range"] = original_fetch_range
+
+    if rejected_runtime is not None:
+        print("  [FAIL] Synthetic fixture: uncontextual ctrl-p token was accepted")
+        return False
+    print("  [PASS] Synthetic fixture: runtime window discovery stays fail-closed without registry context")
+
+    original_release_windows = dict(RELEASE_WINDOWS)
+    manifest_calls: list[tuple[int, int]] = []
+    tail_blob = (
+        b"function generateTitle(){let firstUserText='hi';"
+        b"if(Ue().isNonInteractiveCLIMode())return null;"
+        b"return formatTitle(res);}"
+    )
+    manifest_blobs = {
+        10: b"KEYMAP",
+        40: b"RUNTIME",
+        80: tail_blob,
+    }
+
+    def fake_fetch_manifest(url: str, range_header: str, retries: int = 3):
+        match = re.fullmatch(r"bytes=(\d+)-(\d+)", range_header)
+        if not match:
+            raise ValueError(f"unexpected range header: {range_header}")
+        start, end = int(match.group(1)), int(match.group(2))
+        manifest_calls.append((start, end))
+        blob = manifest_blobs[start]
+        if len(blob) != end - start + 1:
+            raise ValueError("unexpected manifest window length")
+        return blob, f"bytes {start}-{end}/100", 206
+
+    RELEASE_WINDOWS.clear()
+    RELEASE_WINDOWS["9.9.9|x64"] = {
+        "size": 80 + len(tail_blob),
+        "layout": "binary-records",
+        "windows": [[10, 6], [40, 7], [80, len(tail_blob)]],
+    }
+    try:
+        globals()["fetch_range"] = fake_fetch_manifest
+        try:
+            test_variant("9.9.9", "x64")
+        except patch_keybindings.PatchError:
+            pass
+    finally:
+        globals()["fetch_range"] = original_fetch_range
+        RELEASE_WINDOWS.clear()
+        RELEASE_WINDOWS.update(original_release_windows)
+
+    if manifest_calls != [(10, 15), (40, 46), (80, 80 + len(tail_blob) - 1)]:
+        print("  [FAIL] Synthetic fixture: 3-window manifest was not fetched as written")
+        return False
+    print("  [PASS] Synthetic fixture: 3-window manifest is fetched and assembled")
+
+    title_blob = (
+        b"function generateTitle(){let firstUserText='hi';"
+        b"if(Ue().isNonInteractiveCLIMode())return null;"
+        b"return formatTitle(res);}"
+    )
+    pre_title_calls: list[tuple[int, int]] = []
+    pre_title_blobs = {
+        10: b"KEYMAP",
+        40: title_blob,
+        200: b"TAILONLY",
+    }
+
+    def fake_fetch_pre_title(url: str, range_header: str, retries: int = 3):
+        match = re.fullmatch(r"bytes=(\d+)-(\d+)", range_header)
+        if not match:
+            raise ValueError(f"unexpected range header: {range_header}")
+        start, end = int(match.group(1)), int(match.group(2))
+        pre_title_calls.append((start, end))
+        blob = pre_title_blobs[start]
+        if len(blob) != end - start + 1:
+            raise ValueError("unexpected manifest window length")
+        return blob, f"bytes {start}-{end}/100", 206
+
+    RELEASE_WINDOWS.clear()
+    RELEASE_WINDOWS["9.9.8|x64"] = {
+        "size": 208,
+        "layout": "binary-records",
+        "windows": [[10, 6], [40, len(title_blob)], [200, 8]],
+    }
+    try:
+        globals()["fetch_range"] = fake_fetch_pre_title
+        try:
+            ok_pre_title = test_variant("9.9.8", "x64")
+        except patch_keybindings.PatchError:
+            ok_pre_title = False
+        except (KeyError, RuntimeError, ValueError):
+            print("  [FAIL] Synthetic fixture: title in a non-tail recorded window was not used")
+            return False
+    finally:
+        globals()["fetch_range"] = original_fetch_range
+        RELEASE_WINDOWS.clear()
+        RELEASE_WINDOWS.update(original_release_windows)
+
+    if ok_pre_title:
+        print("  [FAIL] Synthetic fixture: 3-window pre-tail title unexpectedly fully patched")
+        return False
+    if pre_title_calls[:3] != [(10, 15), (40, 40 + len(title_blob) - 1), (200, 207)]:
+        print("  [FAIL] Synthetic fixture: pre-tail title manifest was not fetched as written")
+        return False
+    if any(start == 0 for start, _end in pre_title_calls):
+        print("  [FAIL] Synthetic fixture: title in a recorded window still triggered discovery")
+        return False
+    print("  [PASS] Synthetic fixture: recorded non-tail title window is used without rediscovery")
 
     return True
 
@@ -338,7 +645,81 @@ def discover_keymap_window(url: str, total_size: int, tail_start: int) -> tuple[
             window_len = (kend - kstart) + 32768
             return window_start, window_len
         pos = chunk_end - TILE_OVERLAP
+        if pos <= chunk_start:
+            break
     return None
+
+
+def discover_title_window(url: str, total_size: int, tail_start: int) -> tuple[int, int] | None:
+    """Locate a unique contextual titling guard before the last-60MB tail."""
+    lo = 0
+    hi = min(max(0, tail_start), max(0, total_size))
+    found: list[tuple[int, int]] = []
+    pos = lo
+    while pos < hi:
+        chunk_start = pos
+        chunk_end = min(hi, pos + TILE_SIZE + TILE_OVERLAP)
+        tile, _, _ = fetch_range(url, f"bytes={chunk_start}-{chunk_end - 1}")
+        for match in find_valid_matches(tile):
+            abs_start = chunk_start + match.start()
+            abs_end = chunk_start + match.end()
+            if not any(start == abs_start for start, _end in found):
+                found.append((abs_start, abs_end))
+        next_pos = chunk_end - TILE_OVERLAP
+        if next_pos <= chunk_start:
+            break
+        pos = next_pos
+    if len(found) != 1:
+        return None
+    kstart, kend = found[0]
+    window_start = max(0, kstart - 16384)
+    window_len = (kend - kstart) + 32768
+    return window_start, window_len
+
+
+RUNTIME_MAP_MARKER = b'p:"ctrl-p"'
+RUNTIME_MAP_CONTEXT = (b'b:"ctrl-b"', b'c:"ctrl-c"', b'x:"ctrl-x"', b'z:"ctrl-z"')
+# Help/display chords sit a few MiB before the map; dispatch sits after it.
+# v0.223.0 chords are ~9.36 MiB before the registry, so 8 MiB is not enough.
+RUNTIME_WINDOW_BEFORE = 16 * 1024 * 1024
+RUNTIME_WINDOW_AFTER = 160 * 1024
+
+
+def _runtime_map_offsets(tile: bytes) -> list[int]:
+    found: list[int] = []
+    offset = 0
+    while True:
+        position = tile.find(RUNTIME_MAP_MARKER, offset)
+        if position == -1:
+            return found
+        window = tile[max(0, position - 300) : min(len(tile), position + 300)]
+        if all(marker in window for marker in RUNTIME_MAP_CONTEXT):
+            found.append(position)
+        offset = position + 1
+
+
+def discover_runtime_window(url: str, total_size: int, tail_start: int) -> tuple[int, int] | None:
+    """Locate a unique runtime key-ID map before the last-60MB tail."""
+    lo = 0
+    hi = min(max(0, tail_start), max(0, total_size))
+    found: list[int] = []
+    pos = lo
+    while pos < hi:
+        chunk_start = pos
+        chunk_end = min(hi, pos + TILE_SIZE + TILE_OVERLAP)
+        tile, _, _ = fetch_range(url, f"bytes={chunk_start}-{chunk_end - 1}")
+        for relative in _runtime_map_offsets(tile):
+            abs_start = chunk_start + relative
+            if abs_start not in found:
+                found.append(abs_start)
+        next_pos = chunk_end - TILE_OVERLAP
+        if next_pos <= chunk_start:
+            break
+        pos = next_pos
+    if len(found) != 1:
+        return None
+    kstart = found[0]
+    return kstart, len(RUNTIME_MAP_MARKER)
 
 
 def _count_chord(data: bytes, chord: bytes) -> int:
@@ -357,38 +738,75 @@ def _count_chord(data: bytes, chord: bytes) -> int:
     return cnt
 
 
+def display_chord_error(
+    original: bytes, patched: bytes, already_rotated: bool
+) -> str | None:
+    """Return a fail-closed diagnostic, or None when present styles rotated.
+
+    Unused human-chord styles (``Ctrl + N``, ``Ctrl-N``) are skipped. A release
+    still fails if every scanned style is empty.
+    """
+    saw_chords = False
+    for template in (b"Ctrl+%s", b"Ctrl + %s", b"ctrl+%s", b"Ctrl-%s"):
+        before = {
+            letter: _count_chord(original, template % letter)
+            for letter in (b"G", b"N", b"P", b"I")
+        }
+        after = {
+            letter: _count_chord(patched, template % letter)
+            for letter in (b"G", b"N", b"P", b"I")
+        }
+        if already_rotated:
+            if after[b"I"] + after[b"P"] + after[b"G"] == 0:
+                continue
+            saw_chords = True
+            continue
+        if before[b"G"] + before[b"N"] + before[b"P"] == 0:
+            continue
+        saw_chords = True
+        expected = {b"G": before[b"P"], b"N": 0, b"P": before[b"N"], b"I": before[b"G"]}
+        if after != expected:
+            return f"Chord display counts did not rotate ({template!r})"
+    if not saw_chords:
+        if already_rotated:
+            return "Rotated display chords are absent across all scanned bytes"
+        return "display chords absent across all scanned bytes"
+    return None
+
+
 def test_variant(ver: str, arch: str, prefer_cached: bool = False) -> bool:
+    needs_harvest = False
     cached_path = Path(".tmp/factory-releases") / f"droid-{ver}-{arch}"
-    if prefer_cached and cached_path.is_file() and cached_path.stat().st_size > 50_000_000:
+    used_cache = prefer_cached and cached_path.is_file() and cached_path.stat().st_size > 50_000_000
+    if used_cache:
         data = cached_path.read_bytes()
         tail_start = len(data) - min(60_000_000, len(data))
         total_size = len(data)
         keybinding_data = data
         title_source = data[tail_start:]
+        url = ""
+        key = f"{ver}|{arch}"
     else:
         url = f"{BASE_URL}/{ver}/linux/{arch}/droid"
         key = f"{ver}|{arch}"
         entry = RELEASE_WINDOWS.get(key)
         if entry:
             windows = entry.get("windows", [])
-            if len(windows) == 1:
-                w_start, w_len = windows[0]
-                data, content_range, response_status = fetch_range(url, f"bytes={w_start}-{w_start + w_len - 1}")
-                tail_start = w_start
-                total_size = entry.get("size", len(data))
-                keybinding_data = data
-                title_source = data
-            elif len(windows) == 2:
-                (w0_start, w0_len), (w1_start, w1_len) = windows
-                d0, _, _ = fetch_range(url, f"bytes={w0_start}-{w0_start + w0_len - 1}")
-                d1, content_range, response_status = fetch_range(url, f"bytes={w1_start}-{w1_start + w1_len - 1}")
-                data = d1
-                tail_start = w1_start
-                total_size = entry.get("size", w1_start + len(d1))
-                keybinding_data = merge_range_data(d0, w0_start, d1, w1_start)
-                title_source = d1
-            else:
+            if not windows:
                 raise ValueError(f"invalid windows manifest entry for {key}")
+            pieces: list[tuple[int, bytes]] = []
+            for w_start, w_len in windows:
+                blob, content_range, response_status = fetch_range(
+                    url, f"bytes={w_start}-{w_start + w_len - 1}"
+                )
+                pieces.append((w_start, blob))
+            pieces.sort(key=lambda item: item[0])
+            data = pieces[-1][1]
+            tail_start = pieces[-1][0]
+            total_size = entry.get("size", tail_start + len(data))
+            keybinding_data = assemble_range_windows(pieces)
+            titled = [blob for _, blob in pieces if find_valid_matches(blob)]
+            title_source = titled[0] if len(titled) == 1 else data
         else:
             try:
                 data, content_range, response_status = fetch_range(url, "bytes=-60000000")
@@ -406,23 +824,57 @@ def test_variant(ver: str, arch: str, prefer_cached: bool = False) -> bool:
                 tail_start = int(range_match.group(1))
                 total_size = int(range_match.group(3))
             title_source = data
-            if not keybinding_expected(ver):
-                keybinding_data = data
-            else:
+            keybinding_data = data
+            if keybinding_expected(ver):
                 try:
-                    patched_keybindings = patch_keybindings.apply_patch_bytes(data)
-                    keybinding_data = data
+                    patch_keybindings.apply_patch_bytes(data)
                 except patch_keybindings.PatchError:
-                    discovered = discover_keymap_window(url, total_size, tail_start)
-                    if not discovered:
-                        print(f"  [FAIL] Keybinding cluster not found in v{ver} ({arch})")
-                        return False
-                    w0_start, w0_len = discovered
-                    d0, _, _ = fetch_range(url, f"bytes={w0_start}-{w0_start + w0_len - 1}")
-                    keybinding_data = merge_range_data(d0, w0_start, data, tail_start)
-                    print(f"  [DISCOVERED] Window for {key}: [{w0_start}, {w0_len}]")
+                    needs_harvest = True
+            if len(find_valid_matches(title_source)) != 1:
+                needs_harvest = True
+            if needs_harvest:
+                bun_sections = []
+                try:
+                    bun_sections = [
+                        (offset, size)
+                        for name, offset, size in parse_elf_sections(url)
+                        if name == ".bun" and size > 1_000_000
+                    ]
+                except Exception:
+                    bun_sections = []
+                import cluster_harvest
+
+                cluster_harvest.fetch_range = fetch_range
+                cluster_harvest.find_valid_matches = find_valid_matches
+                cluster_harvest.assemble_range_windows = assemble_range_windows
+                harvested = cluster_harvest.harvest_missing_clusters(
+                    url,
+                    total_size=total_size,
+                    tail_start=tail_start,
+                    tail_data=data,
+                    bun_sections=bun_sections,
+                    keybindings=keybinding_expected(ver),
+                )
+                if harvested.error:
+                    print(f"  [FAIL] Harvest rejected v{ver} ({arch}): {harvested.error}")
+                    return False
+                pieces = list(harvested.windows) + [(tail_start, data)]
+                keybinding_data = assemble_range_windows(pieces)
+                title_source = harvested.title_source if harvested.title_source is not None else data
+                for w_start, blob in harvested.windows:
+                    print(f"  [DISCOVERED] Harvest window for {key}: [{w_start}, {len(blob)}]")
 
     valid_matches = find_valid_matches(title_source)
+    if len(valid_matches) != 1 and used_cache:
+        valid_matches = find_valid_matches(data)
+        title_source = data
+    elif len(valid_matches) != 1 and not needs_harvest:
+        discovered_title = discover_title_window(url, total_size, tail_start)
+        if discovered_title:
+            t_start, t_len = discovered_title
+            title_source, _, _ = fetch_range(url, f"bytes={t_start}-{t_start + t_len - 1}")
+            valid_matches = find_valid_matches(title_source)
+            print(f"  [DISCOVERED] Title window for {key}: [{t_start}, {t_len}]")
     if len(valid_matches) != 1:
         print(f"  [FAIL] Expected exactly 1 contextual match for v{ver} ({arch}), found {len(valid_matches)}")
         return False
@@ -453,29 +905,25 @@ def test_variant(ver: str, arch: str, prefer_cached: bool = False) -> bool:
     if len(patched_keybindings) != len(keybinding_data):
         print(f"  [FAIL] Keybinding patch changed binary size for v{ver} ({arch})")
         return False
-    if patched_keybindings == keybinding_data:
-        print(f"  [FAIL] Keybinding patch made no change for v{ver} ({arch})")
-        return False
+    already_rotated = patched_keybindings == keybinding_data
+    if already_rotated:
+        display_state = patch_keybindings.inventory_kinds(keybinding_data).get("display")
+        if display_state != "rotated":
+            print(f"  [FAIL] Keybinding patch made no change for v{ver} ({arch})")
+            return False
     if patch_keybindings.apply_patch_bytes(patched_keybindings) != patched_keybindings:
         print(f"  [FAIL] Keybinding patch is not idempotent for v{ver} ({arch})")
         return False
 
-    # The rotation is a byte-level remap on human chord styles: old queue
-    # hints (G) move to I, old model hints (N) to P, and old editor hints (P)
-    # to G, in every style ("Ctrl+P", "Ctrl + P", "ctrl+N", ...).
-    for template in (b"Ctrl+%s", b"Ctrl + %s", b"ctrl+%s", b"Ctrl-%s"):
-        before = {
-            letter: _count_chord(keybinding_data, template % letter)
-            for letter in (b"G", b"N", b"P", b"I")
-        }
-        after = {
-            letter: _count_chord(patched_keybindings, template % letter)
-            for letter in (b"G", b"N", b"P", b"I")
-        }
-        expected = {b"G": before[b"P"], b"N": 0, b"P": before[b"N"], b"I": before[b"G"]}
-        if after != expected:
-            print(f"  [FAIL] Chord display counts did not rotate ({template!r}) for v{ver} ({arch})")
-            return False
+    # Present human-chord styles must rotate. Unused styles (a release that
+    # never prints "Ctrl + N" or "Ctrl-N") are skipped rather than treated as
+    # a vacuous absence.
+    chord_error = display_chord_error(
+        keybinding_data, patched_keybindings, already_rotated
+    )
+    if chord_error:
+        print(f"  [FAIL] {chord_error} for v{ver} ({arch})")
+        return False
 
     print(
         f"  [PASS] v{ver} ({arch}): match len={match_len} bytes, "
