@@ -428,6 +428,11 @@ def test_synthetic_fixtures() -> bool:
     if runtime_len != len(RUNTIME_MAP_MARKER):
         print("  [FAIL] Synthetic fixture: discovered runtime window used an unexpected length")
         return False
+    # v0.223.0: Ctrl+N help chords at ~152,255,873; registry at ~161,615,096.
+    # 8 MiB of lead-in leaves that chord block ~970 KiB outside the fetch.
+    if RUNTIME_WINDOW_BEFORE <= 9_359_223:
+        print("  [FAIL] Synthetic fixture: runtime padding cannot cover 0.223.0 display chords")
+        return False
     print("  [PASS] Synthetic fixture: runtime window discovery recovers a pre-tail registry")
 
     lone_ctrl_p = b'p:"ctrl-p"'
@@ -508,6 +513,60 @@ def test_synthetic_fixtures() -> bool:
         print("  [FAIL] Synthetic fixture: 3-window manifest was not fetched as written")
         return False
     print("  [PASS] Synthetic fixture: 3-window manifest is fetched and assembled")
+
+    title_blob = (
+        b"function generateTitle(){let firstUserText='hi';"
+        b"if(Ue().isNonInteractiveCLIMode())return null;"
+        b"return formatTitle(res);}"
+    )
+    pre_title_calls: list[tuple[int, int]] = []
+    pre_title_blobs = {
+        10: b"KEYMAP",
+        40: title_blob,
+        200: b"TAILONLY",
+    }
+
+    def fake_fetch_pre_title(url: str, range_header: str, retries: int = 3):
+        match = re.fullmatch(r"bytes=(\d+)-(\d+)", range_header)
+        if not match:
+            raise ValueError(f"unexpected range header: {range_header}")
+        start, end = int(match.group(1)), int(match.group(2))
+        pre_title_calls.append((start, end))
+        blob = pre_title_blobs[start]
+        if len(blob) != end - start + 1:
+            raise ValueError("unexpected manifest window length")
+        return blob, f"bytes {start}-{end}/100", 206
+
+    RELEASE_WINDOWS.clear()
+    RELEASE_WINDOWS["9.9.8|x64"] = {
+        "size": 208,
+        "layout": "binary-records",
+        "windows": [[10, 6], [40, len(title_blob)], [200, 8]],
+    }
+    try:
+        globals()["fetch_range"] = fake_fetch_pre_title
+        try:
+            ok_pre_title = test_variant("9.9.8", "x64")
+        except patch_keybindings.PatchError:
+            ok_pre_title = False
+        except (KeyError, RuntimeError, ValueError):
+            print("  [FAIL] Synthetic fixture: title in a non-tail recorded window was not used")
+            return False
+    finally:
+        globals()["fetch_range"] = original_fetch_range
+        RELEASE_WINDOWS.clear()
+        RELEASE_WINDOWS.update(original_release_windows)
+
+    if ok_pre_title:
+        print("  [FAIL] Synthetic fixture: 3-window pre-tail title unexpectedly fully patched")
+        return False
+    if pre_title_calls[:3] != [(10, 15), (40, 40 + len(title_blob) - 1), (200, 207)]:
+        print("  [FAIL] Synthetic fixture: pre-tail title manifest was not fetched as written")
+        return False
+    if any(start == 0 for start, _end in pre_title_calls):
+        print("  [FAIL] Synthetic fixture: title in a recorded window still triggered discovery")
+        return False
+    print("  [PASS] Synthetic fixture: recorded non-tail title window is used without rediscovery")
 
     return True
 
@@ -625,7 +684,8 @@ def discover_title_window(url: str, total_size: int, tail_start: int) -> tuple[i
 RUNTIME_MAP_MARKER = b'p:"ctrl-p"'
 RUNTIME_MAP_CONTEXT = (b'b:"ctrl-b"', b'c:"ctrl-c"', b'x:"ctrl-x"', b'z:"ctrl-z"')
 # Help/display chords sit a few MiB before the map; dispatch sits after it.
-RUNTIME_WINDOW_BEFORE = 8 * 1024 * 1024
+# v0.223.0 chords are ~9.36 MiB before the registry, so 8 MiB is not enough.
+RUNTIME_WINDOW_BEFORE = 16 * 1024 * 1024
 RUNTIME_WINDOW_AFTER = 160 * 1024
 
 
@@ -712,7 +772,8 @@ def test_variant(ver: str, arch: str, prefer_cached: bool = False) -> bool:
             tail_start = pieces[-1][0]
             total_size = entry.get("size", tail_start + len(data))
             keybinding_data = assemble_range_windows(pieces)
-            title_source = data
+            titled = [blob for _, blob in pieces if find_valid_matches(blob)]
+            title_source = titled[0] if len(titled) == 1 else data
         else:
             try:
                 data, content_range, response_status = fetch_range(url, "bytes=-60000000")
