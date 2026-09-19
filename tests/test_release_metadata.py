@@ -270,6 +270,18 @@ def test_scheduled_checks_gate_expensive_setup_early() -> None:
     assert "Scheduled run found no upstream change; skipping validation and build." in workflow
 
 
+def test_scheduled_checks_skip_known_upstream_breakage() -> None:
+    workflow = WORKFLOW.read_text()
+    build_header = workflow.split("jobs:", 1)[1].split("report-upstream-breakage:", 1)[0]
+    assert "issues: read" in build_header
+    check_block = workflow[workflow.index("id: check_version") : workflow.index("name: Set up Python")]
+    assert "gh issue list" in check_block
+    assert '--label "upstream-breakage"' in check_block
+    assert "Factory CLI v${TARGET_VERSION}" in check_block
+    assert "Scheduled run skipped: open upstream-breakage issue" in check_block
+    assert '[ "${{ github.event_name }}" = "schedule" ]' in check_block
+
+
 def test_user_docs_keep_periodicity_abstract() -> None:
     readme = MODULE.README.read_text()
     publication = PUBLISH_WORKFLOW.read_text()
@@ -373,6 +385,7 @@ if __name__ == "__main__":
     test_release_repair_guards_are_pinned()
     test_container_builds_the_calculated_package_revision()
     test_scheduled_checks_gate_expensive_setup_early()
+    test_scheduled_checks_skip_known_upstream_breakage()
     test_release_concurrency_and_failure_reporting_are_scoped()
     test_publication_uses_healed_metadata_without_dead_copy_paths()
     test_reproducible_release_regeneration_is_documented()

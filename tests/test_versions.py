@@ -117,6 +117,32 @@ def merge_range_data(
     return second_data + first_data[overlap:]
 
 
+def assemble_range_windows(windows: list[tuple[int, bytes]]) -> bytes:
+    """Join ordered byte windows, inserting RANGE_GAP only for true holes."""
+    if not windows:
+        raise ValueError("no byte windows to assemble")
+    ordered = sorted(windows, key=lambda item: item[0])
+    cursor_start, assembled = ordered[0]
+    cursor_end = cursor_start + len(assembled)
+    for start, blob in ordered[1:]:
+        end = start + len(blob)
+        if start > cursor_end:
+            assembled += patch_keybindings.RANGE_GAP + blob
+            cursor_start, cursor_end = start, end
+            continue
+        if end <= cursor_end:
+            overlap_off = start - cursor_start
+            if assembled[overlap_off : overlap_off + len(blob)] != blob:
+                raise ValueError("overlapping byte ranges changed between requests")
+            continue
+        overlap = cursor_end - start
+        if overlap and assembled[-overlap:] != blob[:overlap]:
+            raise ValueError("overlapping byte ranges changed between requests")
+        assembled += blob[max(overlap, 0) :]
+        cursor_end = end
+    return assembled
+
+
 def _validate_range_response(
     data: bytes, status: int, content_range: str, content_length: str
 ) -> None:
@@ -241,6 +267,14 @@ def test_synthetic_fixtures() -> bool:
     if merge_range_data(b"234", 2, b"0123456789", 0) != b"0123456789":
         print("  [FAIL] Synthetic fixture: reverse nested range was not merged")
         return False
+    three = assemble_range_windows([(4, b"EF"), (10, b"YZ"), (20, b"AB")])
+    expected_three = b"EF" + patch_keybindings.RANGE_GAP + b"YZ" + patch_keybindings.RANGE_GAP + b"AB"
+    if three != expected_three:
+        print("  [FAIL] Synthetic fixture: three disjoint windows were not assembled")
+        return False
+    if assemble_range_windows([(0, b"0123456789"), (2, b"234"), (8, b"89")]) != b"0123456789":
+        print("  [FAIL] Synthetic fixture: overlapping window set was not assembled")
+        return False
     _validate_range_response(b"ABCD", 206, "bytes 10-13/20", "4")
     _validate_range_response(b"ABCD", 200, "", "4")
     for response in (
@@ -256,6 +290,164 @@ def test_synthetic_fixtures() -> bool:
         print("  [FAIL] Synthetic fixture: malformed range response was accepted")
         return False
     print("  [PASS] Synthetic fixture: range overlap and gap handling are fail-safe")
+
+    # 6. Title guard lives before the last-60MB tail. The last-60MB slice
+    # must not invent a match, and title-window discovery must recover the
+    # unique contextual guard without loosening the pattern.
+    guard = (
+        b"function generateTitle(){let firstUserText='hi';"
+        b"if(Ue().isNonInteractiveCLIMode())return null;"
+        b"return formatTitle(res);}"
+    )
+    guard_at = 1_048_576
+    tail_start = 70_000_000
+    total_size = tail_start + 1_000
+    tail_slice = b"\x00" * 1_000
+    if find_valid_matches(tail_slice):
+        print("  [FAIL] Synthetic fixture: empty tail slice produced a title match")
+        return False
+
+    original_fetch_range = fetch_range
+
+    def fake_fetch_range(url: str, range_header: str, retries: int = 3):
+        match = re.fullmatch(r"bytes=(\d+)-(\d+)", range_header)
+        if not match:
+            raise ValueError(f"unexpected range header: {range_header}")
+        start, end = int(match.group(1)), int(match.group(2))
+        length = end - start + 1
+        blob = bytearray(length)
+        guard_end = guard_at + len(guard)
+        overlap_start = max(start, guard_at)
+        overlap_end = min(end + 1, guard_end)
+        if overlap_start < overlap_end:
+            src = overlap_start - guard_at
+            dst = overlap_start - start
+            span = overlap_end - overlap_start
+            blob[dst : dst + span] = guard[src : src + span]
+        return bytes(blob), f"bytes {start}-{end}/{total_size}", 206
+
+    try:
+        globals()["fetch_range"] = fake_fetch_range
+        discovered = discover_title_window("https://example.invalid/droid", total_size, tail_start)
+    finally:
+        globals()["fetch_range"] = original_fetch_range
+
+    if discovered is None:
+        print("  [FAIL] Synthetic fixture: title window before tail was not discovered")
+        return False
+    window_start, window_len = discovered
+    if not (window_start <= guard_at < window_start + window_len):
+        print("  [FAIL] Synthetic fixture: discovered title window missed the guard")
+        return False
+    print("  [PASS] Synthetic fixture: title window discovery recovers a pre-tail guard")
+
+    uncontextual = b"if(Ue().isNonInteractiveCLIMode())return null;"
+    uncontextual_at = 2_097_152
+
+    def fake_fetch_uncontextual(url: str, range_header: str, retries: int = 3):
+        match = re.fullmatch(r"bytes=(\d+)-(\d+)", range_header)
+        if not match:
+            raise ValueError(f"unexpected range header: {range_header}")
+        start, end = int(match.group(1)), int(match.group(2))
+        length = end - start + 1
+        blob = bytearray(length)
+        for offset, payload in ((guard_at, uncontextual), (uncontextual_at, uncontextual)):
+            payload_end = offset + len(payload)
+            overlap_start = max(start, offset)
+            overlap_end = min(end + 1, payload_end)
+            if overlap_start < overlap_end:
+                src = overlap_start - offset
+                dst = overlap_start - start
+                span = overlap_end - overlap_start
+                blob[dst : dst + span] = payload[src : src + span]
+        return bytes(blob), f"bytes {start}-{end}/{total_size}", 206
+
+    try:
+        globals()["fetch_range"] = fake_fetch_uncontextual
+        rejected = discover_title_window("https://example.invalid/droid", total_size, tail_start)
+    finally:
+        globals()["fetch_range"] = original_fetch_range
+
+    if rejected is not None:
+        print("  [FAIL] Synthetic fixture: uncontextual pre-tail guards were accepted")
+        return False
+    print("  [PASS] Synthetic fixture: title window discovery stays fail-closed without context")
+
+    # 7. Runtime key registry lives before the last-60MB tail. Discovery must
+    # recover the unique map without accepting an uncontextual ctrl-p token.
+    runtime_map = (
+        b'var hX={b:"ctrl-b",c:"ctrl-c",d:"ctrl-d",e:"ctrl-e",f:"ctrl-f",'
+        b'g:"ctrl-g",j:"ctrl-j",l:"ctrl-l",n:"ctrl-n",o:"ctrl-o",p:"ctrl-p",'
+        b'r:"ctrl-r",t:"ctrl-t",x:"ctrl-x",y:"ctrl-y",z:"ctrl-z"};'
+    )
+    runtime_at = 3_145_728
+
+    def fake_fetch_runtime(url: str, range_header: str, retries: int = 3):
+        match = re.fullmatch(r"bytes=(\d+)-(\d+)", range_header)
+        if not match:
+            raise ValueError(f"unexpected range header: {range_header}")
+        start, end = int(match.group(1)), int(match.group(2))
+        length = end - start + 1
+        blob = bytearray(length)
+        payload_end = runtime_at + len(runtime_map)
+        overlap_start = max(start, runtime_at)
+        overlap_end = min(end + 1, payload_end)
+        if overlap_start < overlap_end:
+            src = overlap_start - runtime_at
+            dst = overlap_start - start
+            span = overlap_end - overlap_start
+            blob[dst : dst + span] = runtime_map[src : src + span]
+        return bytes(blob), f"bytes {start}-{end}/{total_size}", 206
+
+    try:
+        globals()["fetch_range"] = fake_fetch_runtime
+        discovered_runtime = discover_runtime_window(
+            "https://example.invalid/droid", total_size, tail_start
+        )
+    finally:
+        globals()["fetch_range"] = original_fetch_range
+
+    if discovered_runtime is None:
+        print("  [FAIL] Synthetic fixture: runtime window before tail was not discovered")
+        return False
+    runtime_start, runtime_len = discovered_runtime
+    if not (runtime_start <= runtime_at < runtime_start + runtime_len):
+        print("  [FAIL] Synthetic fixture: discovered runtime window missed the registry")
+        return False
+    print("  [PASS] Synthetic fixture: runtime window discovery recovers a pre-tail registry")
+
+    lone_ctrl_p = b'p:"ctrl-p"'
+    lone_at = 4_194_304
+
+    def fake_fetch_lone_ctrl_p(url: str, range_header: str, retries: int = 3):
+        match = re.fullmatch(r"bytes=(\d+)-(\d+)", range_header)
+        if not match:
+            raise ValueError(f"unexpected range header: {range_header}")
+        start, end = int(match.group(1)), int(match.group(2))
+        length = end - start + 1
+        blob = bytearray(length)
+        payload_end = lone_at + len(lone_ctrl_p)
+        overlap_start = max(start, lone_at)
+        overlap_end = min(end + 1, payload_end)
+        if overlap_start < overlap_end:
+            src = overlap_start - lone_at
+            dst = overlap_start - start
+            span = overlap_end - overlap_start
+            blob[dst : dst + span] = lone_ctrl_p[src : src + span]
+        return bytes(blob), f"bytes {start}-{end}/{total_size}", 206
+
+    try:
+        globals()["fetch_range"] = fake_fetch_lone_ctrl_p
+        rejected_runtime = discover_runtime_window(
+            "https://example.invalid/droid", total_size, tail_start
+        )
+    finally:
+        globals()["fetch_range"] = original_fetch_range
+
+    if rejected_runtime is not None:
+        print("  [FAIL] Synthetic fixture: uncontextual ctrl-p token was accepted")
+        return False
+    print("  [PASS] Synthetic fixture: runtime window discovery stays fail-closed without registry context")
 
     return True
 
@@ -338,7 +530,84 @@ def discover_keymap_window(url: str, total_size: int, tail_start: int) -> tuple[
             window_len = (kend - kstart) + 32768
             return window_start, window_len
         pos = chunk_end - TILE_OVERLAP
+        if pos <= chunk_start:
+            break
     return None
+
+
+def discover_title_window(url: str, total_size: int, tail_start: int) -> tuple[int, int] | None:
+    """Locate a unique contextual titling guard before the last-60MB tail."""
+    lo = 0
+    hi = min(max(0, tail_start), max(0, total_size))
+    found: list[tuple[int, int]] = []
+    pos = lo
+    while pos < hi:
+        chunk_start = pos
+        chunk_end = min(hi, pos + TILE_SIZE + TILE_OVERLAP)
+        tile, _, _ = fetch_range(url, f"bytes={chunk_start}-{chunk_end - 1}")
+        for match in find_valid_matches(tile):
+            abs_start = chunk_start + match.start()
+            abs_end = chunk_start + match.end()
+            if not any(start == abs_start for start, _end in found):
+                found.append((abs_start, abs_end))
+        next_pos = chunk_end - TILE_OVERLAP
+        if next_pos <= chunk_start:
+            break
+        pos = next_pos
+    if len(found) != 1:
+        return None
+    kstart, kend = found[0]
+    window_start = max(0, kstart - 16384)
+    window_len = (kend - kstart) + 32768
+    return window_start, window_len
+
+
+RUNTIME_MAP_MARKER = b'p:"ctrl-p"'
+RUNTIME_MAP_CONTEXT = (b'b:"ctrl-b"', b'c:"ctrl-c"', b'x:"ctrl-x"', b'z:"ctrl-z"')
+# Help/display chords sit a few MiB before the map; dispatch sits after it.
+RUNTIME_WINDOW_BEFORE = 8 * 1024 * 1024
+RUNTIME_WINDOW_AFTER = 160 * 1024
+
+
+def _runtime_map_offsets(tile: bytes) -> list[int]:
+    found: list[int] = []
+    offset = 0
+    while True:
+        position = tile.find(RUNTIME_MAP_MARKER, offset)
+        if position == -1:
+            return found
+        window = tile[max(0, position - 300) : min(len(tile), position + 300)]
+        if all(marker in window for marker in RUNTIME_MAP_CONTEXT):
+            found.append(position)
+        offset = position + 1
+
+
+def discover_runtime_window(url: str, total_size: int, tail_start: int) -> tuple[int, int] | None:
+    """Locate a unique runtime key-ID map before the last-60MB tail."""
+    lo = 0
+    hi = min(max(0, tail_start), max(0, total_size))
+    found: list[int] = []
+    pos = lo
+    while pos < hi:
+        chunk_start = pos
+        chunk_end = min(hi, pos + TILE_SIZE + TILE_OVERLAP)
+        tile, _, _ = fetch_range(url, f"bytes={chunk_start}-{chunk_end - 1}")
+        for relative in _runtime_map_offsets(tile):
+            abs_start = chunk_start + relative
+            if abs_start not in found:
+                found.append(abs_start)
+        next_pos = chunk_end - TILE_OVERLAP
+        if next_pos <= chunk_start:
+            break
+        pos = next_pos
+    if len(found) != 1:
+        return None
+    kstart = found[0]
+    window_start = max(0, kstart - 16384)
+    window_end = min(hi, kstart + len(RUNTIME_MAP_MARKER) + 16384)
+    if window_end <= window_start:
+        return None
+    return window_start, window_end - window_start
 
 
 def _count_chord(data: bytes, chord: bytes) -> int:
@@ -359,12 +628,15 @@ def _count_chord(data: bytes, chord: bytes) -> int:
 
 def test_variant(ver: str, arch: str, prefer_cached: bool = False) -> bool:
     cached_path = Path(".tmp/factory-releases") / f"droid-{ver}-{arch}"
-    if prefer_cached and cached_path.is_file() and cached_path.stat().st_size > 50_000_000:
+    used_cache = prefer_cached and cached_path.is_file() and cached_path.stat().st_size > 50_000_000
+    if used_cache:
         data = cached_path.read_bytes()
         tail_start = len(data) - min(60_000_000, len(data))
         total_size = len(data)
         keybinding_data = data
         title_source = data[tail_start:]
+        url = ""
+        key = f"{ver}|{arch}"
     else:
         url = f"{BASE_URL}/{ver}/linux/{arch}/droid"
         key = f"{ver}|{arch}"
@@ -419,10 +691,30 @@ def test_variant(ver: str, arch: str, prefer_cached: bool = False) -> bool:
                         return False
                     w0_start, w0_len = discovered
                     d0, _, _ = fetch_range(url, f"bytes={w0_start}-{w0_start + w0_len - 1}")
-                    keybinding_data = merge_range_data(d0, w0_start, data, tail_start)
+                    pieces = [(w0_start, d0), (tail_start, data)]
                     print(f"  [DISCOVERED] Window for {key}: [{w0_start}, {w0_len}]")
+                    discovered_runtime = discover_runtime_window(url, total_size, tail_start)
+                    if discovered_runtime:
+                        r_hit, _r_len = discovered_runtime
+                        r_start = max(0, r_hit - RUNTIME_WINDOW_BEFORE)
+                        r_end = min(tail_start, r_hit + RUNTIME_WINDOW_AFTER)
+                        r_len = r_end - r_start
+                        d_runtime, _, _ = fetch_range(url, f"bytes={r_start}-{r_end - 1}")
+                        pieces.append((r_start, d_runtime))
+                        print(f"  [DISCOVERED] Runtime window for {key}: [{r_start}, {r_len}]")
+                    keybinding_data = assemble_range_windows(pieces)
 
     valid_matches = find_valid_matches(title_source)
+    if len(valid_matches) != 1 and used_cache:
+        valid_matches = find_valid_matches(data)
+        title_source = data
+    elif len(valid_matches) != 1:
+        discovered_title = discover_title_window(url, total_size, tail_start)
+        if discovered_title:
+            t_start, t_len = discovered_title
+            title_source, _, _ = fetch_range(url, f"bytes={t_start}-{t_start + t_len - 1}")
+            valid_matches = find_valid_matches(title_source)
+            print(f"  [DISCOVERED] Title window for {key}: [{t_start}, {t_len}]")
     if len(valid_matches) != 1:
         print(f"  [FAIL] Expected exactly 1 contextual match for v{ver} ({arch}), found {len(valid_matches)}")
         return False
