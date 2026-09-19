@@ -188,6 +188,8 @@ jobs:
         run: |
           echo "==> Running offline synthetic patcher fixtures..."
           python3 tests/test_versions.py --offline
+          echo "==> Running missing-cluster harvest fixtures..."
+          python3 tests/test_harvest.py
           echo "==> Running keybinding rotation fixture tests..."
           python3 tests/test_keybindings.py
           echo "==> Running breakage & recovery simulation suite..."

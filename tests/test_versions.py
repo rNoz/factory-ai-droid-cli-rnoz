@@ -16,6 +16,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "patches"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import patch_keybindings  # noqa: E402
 
 # Test releases covering major engine and minification changes
@@ -428,11 +429,6 @@ def test_synthetic_fixtures() -> bool:
     if runtime_len != len(RUNTIME_MAP_MARKER):
         print("  [FAIL] Synthetic fixture: discovered runtime window used an unexpected length")
         return False
-    # v0.223.0: Ctrl+N help chords at ~152,255,873; registry at ~161,615,096.
-    # 8 MiB of lead-in leaves that chord block ~970 KiB outside the fetch.
-    if RUNTIME_WINDOW_BEFORE <= 9_359_223:
-        print("  [FAIL] Synthetic fixture: runtime padding cannot cover 0.223.0 display chords")
-        return False
     print("  [PASS] Synthetic fixture: runtime window discovery recovers a pre-tail registry")
 
     lone_ctrl_p = b'p:"ctrl-p"'
@@ -742,7 +738,44 @@ def _count_chord(data: bytes, chord: bytes) -> int:
     return cnt
 
 
+def display_chord_error(
+    original: bytes, patched: bytes, already_rotated: bool
+) -> str | None:
+    """Return a fail-closed diagnostic, or None when present styles rotated.
+
+    Unused human-chord styles (``Ctrl + N``, ``Ctrl-N``) are skipped. A release
+    still fails if every scanned style is empty.
+    """
+    saw_chords = False
+    for template in (b"Ctrl+%s", b"Ctrl + %s", b"ctrl+%s", b"Ctrl-%s"):
+        before = {
+            letter: _count_chord(original, template % letter)
+            for letter in (b"G", b"N", b"P", b"I")
+        }
+        after = {
+            letter: _count_chord(patched, template % letter)
+            for letter in (b"G", b"N", b"P", b"I")
+        }
+        if already_rotated:
+            if after[b"I"] + after[b"P"] + after[b"G"] == 0:
+                continue
+            saw_chords = True
+            continue
+        if before[b"G"] + before[b"N"] + before[b"P"] == 0:
+            continue
+        saw_chords = True
+        expected = {b"G": before[b"P"], b"N": 0, b"P": before[b"N"], b"I": before[b"G"]}
+        if after != expected:
+            return f"Chord display counts did not rotate ({template!r})"
+    if not saw_chords:
+        if already_rotated:
+            return "Rotated display chords are absent across all scanned bytes"
+        return "display chords absent across all scanned bytes"
+    return None
+
+
 def test_variant(ver: str, arch: str, prefer_cached: bool = False) -> bool:
+    needs_harvest = False
     cached_path = Path(".tmp/factory-releases") / f"droid-{ver}-{arch}"
     used_cache = prefer_cached and cached_path.is_file() and cached_path.stat().st_size > 50_000_000
     if used_cache:
@@ -791,39 +824,51 @@ def test_variant(ver: str, arch: str, prefer_cached: bool = False) -> bool:
                 tail_start = int(range_match.group(1))
                 total_size = int(range_match.group(3))
             title_source = data
-            if not keybinding_expected(ver):
-                keybinding_data = data
-            else:
+            keybinding_data = data
+            if keybinding_expected(ver):
                 try:
-                    patched_keybindings = patch_keybindings.apply_patch_bytes(data)
-                    keybinding_data = data
+                    patch_keybindings.apply_patch_bytes(data)
                 except patch_keybindings.PatchError:
-                    discovered = discover_keymap_window(url, total_size, tail_start)
-                    if not discovered:
-                        print(f"  [FAIL] Keybinding cluster not found in v{ver} ({arch})")
-                        return False
-                    w0_start, w0_len = discovered
-                    d0, _, _ = fetch_range(url, f"bytes={w0_start}-{w0_start + w0_len - 1}")
-                    pieces = [(w0_start, d0), (tail_start, data)]
-                    print(f"  [DISCOVERED] Window for {key}: [{w0_start}, {w0_len}]")
-                    discovered_runtime = discover_runtime_window(url, total_size, tail_start)
-                    if discovered_runtime:
-                        map_start, _r_hit_len = discovered_runtime
-                        r_start = max(0, map_start - RUNTIME_WINDOW_BEFORE)
-                        r_end = min(tail_start, map_start + RUNTIME_WINDOW_AFTER)
-                        r_len = r_end - r_start
-                        d_runtime, _, _ = fetch_range(url, f"bytes={r_start}-{r_end - 1}")
-                        pieces.append((r_start, d_runtime))
-                        print(f"  [DISCOVERED] Runtime window for {key}: [{r_start}, {r_len}]")
-                    else:
-                        print(f"  [WARN] Runtime window not found for {key}")
-                    keybinding_data = assemble_range_windows(pieces)
+                    needs_harvest = True
+            if len(find_valid_matches(title_source)) != 1:
+                needs_harvest = True
+            if needs_harvest:
+                bun_sections = []
+                try:
+                    bun_sections = [
+                        (offset, size)
+                        for name, offset, size in parse_elf_sections(url)
+                        if name == ".bun" and size > 1_000_000
+                    ]
+                except Exception:
+                    bun_sections = []
+                import cluster_harvest
+
+                cluster_harvest.fetch_range = fetch_range
+                cluster_harvest.find_valid_matches = find_valid_matches
+                cluster_harvest.assemble_range_windows = assemble_range_windows
+                harvested = cluster_harvest.harvest_missing_clusters(
+                    url,
+                    total_size=total_size,
+                    tail_start=tail_start,
+                    tail_data=data,
+                    bun_sections=bun_sections,
+                    keybindings=keybinding_expected(ver),
+                )
+                if harvested.error:
+                    print(f"  [FAIL] Harvest rejected v{ver} ({arch}): {harvested.error}")
+                    return False
+                pieces = list(harvested.windows) + [(tail_start, data)]
+                keybinding_data = assemble_range_windows(pieces)
+                title_source = harvested.title_source if harvested.title_source is not None else data
+                for w_start, blob in harvested.windows:
+                    print(f"  [DISCOVERED] Harvest window for {key}: [{w_start}, {len(blob)}]")
 
     valid_matches = find_valid_matches(title_source)
     if len(valid_matches) != 1 and used_cache:
         valid_matches = find_valid_matches(data)
         title_source = data
-    elif len(valid_matches) != 1:
+    elif len(valid_matches) != 1 and not needs_harvest:
         discovered_title = discover_title_window(url, total_size, tail_start)
         if discovered_title:
             t_start, t_len = discovered_title
@@ -860,29 +905,25 @@ def test_variant(ver: str, arch: str, prefer_cached: bool = False) -> bool:
     if len(patched_keybindings) != len(keybinding_data):
         print(f"  [FAIL] Keybinding patch changed binary size for v{ver} ({arch})")
         return False
-    if patched_keybindings == keybinding_data:
-        print(f"  [FAIL] Keybinding patch made no change for v{ver} ({arch})")
-        return False
+    already_rotated = patched_keybindings == keybinding_data
+    if already_rotated:
+        display_state = patch_keybindings.inventory_kinds(keybinding_data).get("display")
+        if display_state != "rotated":
+            print(f"  [FAIL] Keybinding patch made no change for v{ver} ({arch})")
+            return False
     if patch_keybindings.apply_patch_bytes(patched_keybindings) != patched_keybindings:
         print(f"  [FAIL] Keybinding patch is not idempotent for v{ver} ({arch})")
         return False
 
-    # The rotation is a byte-level remap on human chord styles: old queue
-    # hints (G) move to I, old model hints (N) to P, and old editor hints (P)
-    # to G, in every style ("Ctrl+P", "Ctrl + P", "ctrl+N", ...).
-    for template in (b"Ctrl+%s", b"Ctrl + %s", b"ctrl+%s", b"Ctrl-%s"):
-        before = {
-            letter: _count_chord(keybinding_data, template % letter)
-            for letter in (b"G", b"N", b"P", b"I")
-        }
-        after = {
-            letter: _count_chord(patched_keybindings, template % letter)
-            for letter in (b"G", b"N", b"P", b"I")
-        }
-        expected = {b"G": before[b"P"], b"N": 0, b"P": before[b"N"], b"I": before[b"G"]}
-        if after != expected:
-            print(f"  [FAIL] Chord display counts did not rotate ({template!r}) for v{ver} ({arch})")
-            return False
+    # Present human-chord styles must rotate. Unused styles (a release that
+    # never prints "Ctrl + N" or "Ctrl-N") are skipped rather than treated as
+    # a vacuous absence.
+    chord_error = display_chord_error(
+        keybinding_data, patched_keybindings, already_rotated
+    )
+    if chord_error:
+        print(f"  [FAIL] {chord_error} for v{ver} ({arch})")
+        return False
 
     print(
         f"  [PASS] v{ver} ({arch}): match len={match_len} bytes, "

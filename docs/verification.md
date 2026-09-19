@@ -4,6 +4,7 @@ Run the focused offline checks first:
 
 ```bash
 python3 tests/test_versions.py --offline
+python3 tests/test_harvest.py
 python3 tests/test_keybindings.py
 python3 tests/simulate_breakage.py
 ```
