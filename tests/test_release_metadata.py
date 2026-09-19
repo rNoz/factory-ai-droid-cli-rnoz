@@ -275,11 +275,15 @@ def test_scheduled_checks_skip_known_upstream_breakage() -> None:
     build_header = workflow.split("jobs:", 1)[1].split("report-upstream-breakage:", 1)[0]
     assert "issues: read" in build_header
     check_block = workflow[workflow.index("id: check_version") : workflow.index("name: Set up Python")]
-    assert "gh issue list" in check_block
-    assert '--label "upstream-breakage"' in check_block
-    assert "Factory CLI v${TARGET_VERSION}" in check_block
-    assert "Scheduled run skipped: open upstream-breakage issue" in check_block
-    assert '[ "${{ github.event_name }}" = "schedule" ]' in check_block
+    skip_start = check_block.index("OPEN_BREAKAGE=")
+    skip_block = check_block[skip_start : skip_start + 900]
+    assert "gh issue list" in skip_block
+    assert '--label "upstream-breakage"' in skip_block
+    assert "Factory CLI v${TARGET_VERSION}" in skip_block
+    assert "grep -Fxq" in skip_block
+    assert "Scheduled run skipped: open upstream-breakage issue" in skip_block
+    assert 'if [ "${{ github.event_name }}" = "schedule" ] && [ "$RUN_CI" = "true" ]; then' in check_block
+    assert 'should_build=false' in check_block[skip_start:]
 
 
 def test_user_docs_keep_periodicity_abstract() -> None:

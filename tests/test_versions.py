@@ -124,14 +124,16 @@ def assemble_range_windows(windows: list[tuple[int, bytes]]) -> bytes:
     ordered = sorted(windows, key=lambda item: item[0])
     cursor_start, assembled = ordered[0]
     cursor_end = cursor_start + len(assembled)
+    segment_base = 0
     for start, blob in ordered[1:]:
         end = start + len(blob)
         if start > cursor_end:
             assembled += patch_keybindings.RANGE_GAP + blob
+            segment_base = len(assembled) - len(blob)
             cursor_start, cursor_end = start, end
             continue
         if end <= cursor_end:
-            overlap_off = start - cursor_start
+            overlap_off = segment_base + (start - cursor_start)
             if assembled[overlap_off : overlap_off + len(blob)] != blob:
                 raise ValueError("overlapping byte ranges changed between requests")
             continue
@@ -275,6 +277,16 @@ def test_synthetic_fixtures() -> bool:
     if assemble_range_windows([(0, b"0123456789"), (2, b"234"), (8, b"89")]) != b"0123456789":
         print("  [FAIL] Synthetic fixture: overlapping window set was not assembled")
         return False
+    try:
+        nested_after_gap = assemble_range_windows(
+            [(0, b"AAAA"), (10, b"BBBB"), (12, b"BB")]
+        )
+    except ValueError:
+        print("  [FAIL] Synthetic fixture: contained window after a gap was rejected")
+        return False
+    if nested_after_gap != b"AAAA" + patch_keybindings.RANGE_GAP + b"BBBB":
+        print("  [FAIL] Synthetic fixture: contained window after a gap was assembled wrong")
+        return False
     _validate_range_response(b"ABCD", 206, "bytes 10-13/20", "4")
     _validate_range_response(b"ABCD", 200, "", "4")
     for response in (
@@ -351,15 +363,14 @@ def test_synthetic_fixtures() -> bool:
         start, end = int(match.group(1)), int(match.group(2))
         length = end - start + 1
         blob = bytearray(length)
-        for offset, payload in ((guard_at, uncontextual), (uncontextual_at, uncontextual)):
-            payload_end = offset + len(payload)
-            overlap_start = max(start, offset)
-            overlap_end = min(end + 1, payload_end)
-            if overlap_start < overlap_end:
-                src = overlap_start - offset
-                dst = overlap_start - start
-                span = overlap_end - overlap_start
-                blob[dst : dst + span] = payload[src : src + span]
+        payload_end = uncontextual_at + len(uncontextual)
+        overlap_start = max(start, uncontextual_at)
+        overlap_end = min(end + 1, payload_end)
+        if overlap_start < overlap_end:
+            src = overlap_start - uncontextual_at
+            dst = overlap_start - start
+            span = overlap_end - overlap_start
+            blob[dst : dst + span] = uncontextual[src : src + span]
         return bytes(blob), f"bytes {start}-{end}/{total_size}", 206
 
     try:
@@ -411,8 +422,11 @@ def test_synthetic_fixtures() -> bool:
         print("  [FAIL] Synthetic fixture: runtime window before tail was not discovered")
         return False
     runtime_start, runtime_len = discovered_runtime
-    if not (runtime_start <= runtime_at < runtime_start + runtime_len):
+    if not (runtime_at <= runtime_start < runtime_at + len(runtime_map)):
         print("  [FAIL] Synthetic fixture: discovered runtime window missed the registry")
+        return False
+    if runtime_len != len(RUNTIME_MAP_MARKER):
+        print("  [FAIL] Synthetic fixture: discovered runtime window used an unexpected length")
         return False
     print("  [PASS] Synthetic fixture: runtime window discovery recovers a pre-tail registry")
 
@@ -448,6 +462,52 @@ def test_synthetic_fixtures() -> bool:
         print("  [FAIL] Synthetic fixture: uncontextual ctrl-p token was accepted")
         return False
     print("  [PASS] Synthetic fixture: runtime window discovery stays fail-closed without registry context")
+
+    original_release_windows = dict(RELEASE_WINDOWS)
+    manifest_calls: list[tuple[int, int]] = []
+    tail_blob = (
+        b"function generateTitle(){let firstUserText='hi';"
+        b"if(Ue().isNonInteractiveCLIMode())return null;"
+        b"return formatTitle(res);}"
+    )
+    manifest_blobs = {
+        10: b"KEYMAP",
+        40: b"RUNTIME",
+        80: tail_blob,
+    }
+
+    def fake_fetch_manifest(url: str, range_header: str, retries: int = 3):
+        match = re.fullmatch(r"bytes=(\d+)-(\d+)", range_header)
+        if not match:
+            raise ValueError(f"unexpected range header: {range_header}")
+        start, end = int(match.group(1)), int(match.group(2))
+        manifest_calls.append((start, end))
+        blob = manifest_blobs[start]
+        if len(blob) != end - start + 1:
+            raise ValueError("unexpected manifest window length")
+        return blob, f"bytes {start}-{end}/100", 206
+
+    RELEASE_WINDOWS.clear()
+    RELEASE_WINDOWS["9.9.9|x64"] = {
+        "size": 80 + len(tail_blob),
+        "layout": "binary-records",
+        "windows": [[10, 6], [40, 7], [80, len(tail_blob)]],
+    }
+    try:
+        globals()["fetch_range"] = fake_fetch_manifest
+        try:
+            test_variant("9.9.9", "x64")
+        except patch_keybindings.PatchError:
+            pass
+    finally:
+        globals()["fetch_range"] = original_fetch_range
+        RELEASE_WINDOWS.clear()
+        RELEASE_WINDOWS.update(original_release_windows)
+
+    if manifest_calls != [(10, 15), (40, 46), (80, 80 + len(tail_blob) - 1)]:
+        print("  [FAIL] Synthetic fixture: 3-window manifest was not fetched as written")
+        return False
+    print("  [PASS] Synthetic fixture: 3-window manifest is fetched and assembled")
 
     return True
 
@@ -603,11 +663,7 @@ def discover_runtime_window(url: str, total_size: int, tail_start: int) -> tuple
     if len(found) != 1:
         return None
     kstart = found[0]
-    window_start = max(0, kstart - 16384)
-    window_end = min(hi, kstart + len(RUNTIME_MAP_MARKER) + 16384)
-    if window_end <= window_start:
-        return None
-    return window_start, window_end - window_start
+    return kstart, len(RUNTIME_MAP_MARKER)
 
 
 def _count_chord(data: bytes, chord: bytes) -> int:
@@ -643,24 +699,20 @@ def test_variant(ver: str, arch: str, prefer_cached: bool = False) -> bool:
         entry = RELEASE_WINDOWS.get(key)
         if entry:
             windows = entry.get("windows", [])
-            if len(windows) == 1:
-                w_start, w_len = windows[0]
-                data, content_range, response_status = fetch_range(url, f"bytes={w_start}-{w_start + w_len - 1}")
-                tail_start = w_start
-                total_size = entry.get("size", len(data))
-                keybinding_data = data
-                title_source = data
-            elif len(windows) == 2:
-                (w0_start, w0_len), (w1_start, w1_len) = windows
-                d0, _, _ = fetch_range(url, f"bytes={w0_start}-{w0_start + w0_len - 1}")
-                d1, content_range, response_status = fetch_range(url, f"bytes={w1_start}-{w1_start + w1_len - 1}")
-                data = d1
-                tail_start = w1_start
-                total_size = entry.get("size", w1_start + len(d1))
-                keybinding_data = merge_range_data(d0, w0_start, d1, w1_start)
-                title_source = d1
-            else:
+            if not windows:
                 raise ValueError(f"invalid windows manifest entry for {key}")
+            pieces: list[tuple[int, bytes]] = []
+            for w_start, w_len in windows:
+                blob, content_range, response_status = fetch_range(
+                    url, f"bytes={w_start}-{w_start + w_len - 1}"
+                )
+                pieces.append((w_start, blob))
+            pieces.sort(key=lambda item: item[0])
+            data = pieces[-1][1]
+            tail_start = pieces[-1][0]
+            total_size = entry.get("size", tail_start + len(data))
+            keybinding_data = assemble_range_windows(pieces)
+            title_source = data
         else:
             try:
                 data, content_range, response_status = fetch_range(url, "bytes=-60000000")
@@ -695,13 +747,15 @@ def test_variant(ver: str, arch: str, prefer_cached: bool = False) -> bool:
                     print(f"  [DISCOVERED] Window for {key}: [{w0_start}, {w0_len}]")
                     discovered_runtime = discover_runtime_window(url, total_size, tail_start)
                     if discovered_runtime:
-                        r_hit, _r_len = discovered_runtime
-                        r_start = max(0, r_hit - RUNTIME_WINDOW_BEFORE)
-                        r_end = min(tail_start, r_hit + RUNTIME_WINDOW_AFTER)
+                        map_start, _r_hit_len = discovered_runtime
+                        r_start = max(0, map_start - RUNTIME_WINDOW_BEFORE)
+                        r_end = min(tail_start, map_start + RUNTIME_WINDOW_AFTER)
                         r_len = r_end - r_start
                         d_runtime, _, _ = fetch_range(url, f"bytes={r_start}-{r_end - 1}")
                         pieces.append((r_start, d_runtime))
                         print(f"  [DISCOVERED] Runtime window for {key}: [{r_start}, {r_len}]")
+                    else:
+                        print(f"  [WARN] Runtime window not found for {key}")
                     keybinding_data = assemble_range_windows(pieces)
 
     valid_matches = find_valid_matches(title_source)
