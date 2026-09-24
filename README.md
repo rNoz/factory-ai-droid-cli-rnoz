@@ -10,7 +10,7 @@
 [![License](https://img.shields.io/badge/license-Apache--2.0%20%2B%20third--party%20proprietary-blue.svg)](LICENSE)
 [![Arch](https://img.shields.io/badge/arch-x86__64%20%7C%20aarch64%20%7C%20macOS-informational)](#supported-architectures--platforms)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)](https://python.org)
-[![Tested releases](https://img.shields.io/badge/tested%20releases-22-informational)](#tested-releases)
+[![Tested releases](https://img.shields.io/badge/tested%20releases-23-informational)](#tested-releases)
 
 </div>
 
@@ -172,6 +172,7 @@ Maintainer release and rebuild procedures are documented in
     <tr><td><a href="https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml"><img src="https://img.shields.io/badge/0.225.0-x64%20AVX2-brightgreen" alt="0.225.0 x64 AVX2" /></a></td><td><a href="https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml"><img src="https://img.shields.io/badge/0.225.0-x64%20baseline-brightgreen" alt="0.225.0 x64 baseline" /></a></td></tr>
     <tr><td><a href="https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml"><img src="https://img.shields.io/badge/0.225.1-x64%20AVX2-brightgreen" alt="0.225.1 x64 AVX2" /></a></td><td><a href="https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml"><img src="https://img.shields.io/badge/0.225.1-x64%20baseline-brightgreen" alt="0.225.1 x64 baseline" /></a></td></tr>
     <tr><td><a href="https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml"><img src="https://img.shields.io/badge/0.225.2-x64%20AVX2-brightgreen" alt="0.225.2 x64 AVX2" /></a></td><td><a href="https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml"><img src="https://img.shields.io/badge/0.225.2-x64%20baseline-brightgreen" alt="0.225.2 x64 baseline" /></a></td></tr>
+    <tr><td><a href="https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml"><img src="https://img.shields.io/badge/0.226.1-x64%20AVX2-brightgreen" alt="0.226.1 x64 AVX2" /></a></td><td><a href="https://github.com/rNoz/factory-ai-droid-cli-rnoz/actions/workflows/aur-sync.yml"><img src="https://img.shields.io/badge/0.226.1-x64%20baseline-brightgreen" alt="0.226.1 x64 baseline" /></a></td></tr>
   </tbody>
 </table>
 <!-- tested-releases:end -->
