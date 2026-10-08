@@ -15,6 +15,13 @@ Validate both upstream binary variants, including the latest release:
 python3 tests/test_versions.py --latest
 ```
 
+This validates the downloaded release bytes (it does not execute a local Droid
+binary). Both x64 variants are checked for each release; after a release fails,
+the remaining version sweep stops. A scheduled CI failure opens an
+`upstream-breakage` issue and pauses later scheduled validations until the issue
+is resolved. Push, pull-request, and maintainer-dispatched runs remain available
+for remediation.
+
 Create a disposable local binary for interactive evaluation:
 
 ```bash

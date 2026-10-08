@@ -129,6 +129,54 @@ def test_harvest_four_clusters_uses_small_windows() -> None:
         raise AssertionError("harvest missed the pre-tail title guard")
 
 
+def test_harvest_finds_adjacent_dispatch_with_unrelated_ctrl_g_handler() -> None:
+    keymap = test_keybindings.keymap_table_binary_records()
+    dispatch = (
+        test_keybindings.binary_record_dispatch_block()
+        + b'if(!ie&&c.showMachines&&_n(Jt,"ctrl-g"))return Ut(),!0;'
+    )
+    model = test_keybindings.binary_record_model_cycle_descriptor()
+    runtime = test_keybindings.runtime_key_registry()
+    display = test_keybindings.display_block()
+    tail_start = 20_000_000
+    total_size = tail_start + 1000
+    tail_data = b"\x00" * 1000
+    blobs = {
+        100_000: keymap,
+        200_000: dispatch + model,
+        300_000: runtime,
+        18_000_000: display,
+        19_000_000: TITLE_GUARD,
+    }
+    original = test_versions.fetch_range
+    fake = _range_fetch(blobs, total_size)
+    try:
+        test_versions.fetch_range = fake
+        cluster_harvest.fetch_range = fake
+        result = cluster_harvest.harvest_missing_clusters(
+            "https://example.invalid/droid",
+            total_size=total_size,
+            tail_start=tail_start,
+            tail_data=tail_data,
+            bun_sections=[(0, tail_start)],
+            keybindings=True,
+        )
+    finally:
+        test_versions.fetch_range = original
+        cluster_harvest.fetch_range = original
+
+    if result.error:
+        raise AssertionError(result.error)
+    assembled = test_versions.assemble_range_windows(
+        result.windows + [(tail_start, tail_data)]
+    )
+    patched = patch_keybindings.apply_patch_bytes(assembled)
+    if patch_keybindings.inventory_kinds(patched)["dispatch"] != "rotated":
+        raise AssertionError("harvested dispatch pair was not rotated")
+    if b'if(!ie&&c.showMachines&&_n(Jt,"ctrl-g"))return Ut(),!0;' not in patched:
+        raise AssertionError("unrelated Ctrl-G handler was modified")
+
+
 def test_distant_display_hits_persist_small_windows() -> None:
     rest = (
         test_keybindings.keymap_table()
@@ -357,6 +405,7 @@ def main() -> int:
     tests = (
         test_inventory_uses_patcher_predicates,
         test_harvest_four_clusters_uses_small_windows,
+        test_harvest_finds_adjacent_dispatch_with_unrelated_ctrl_g_handler,
         test_distant_display_hits_persist_small_windows,
         test_vacuous_display_fails_closed,
         test_keymap_only_path_skips_raw_decoy,

@@ -279,9 +279,9 @@ def test_scheduled_checks_skip_known_upstream_breakage() -> None:
     skip_block = check_block[skip_start : skip_start + 900]
     assert "gh issue list" in skip_block
     assert '--label "upstream-breakage"' in skip_block
-    assert "Factory CLI v${TARGET_VERSION}" in skip_block
-    assert "grep -Fxq" in skip_block
-    assert "Scheduled run skipped: open upstream-breakage issue" in skip_block
+    assert 'if [ -n "$OPEN_BREAKAGE" ]; then' in skip_block
+    assert "Factory CLI v${TARGET_VERSION}" not in skip_block
+    assert "Scheduled run paused: open upstream-breakage issue" in skip_block
     assert 'if [ "${{ github.event_name }}" = "schedule" ] && [ "$RUN_CI" = "true" ]; then' in check_block
     assert 'should_build=false' in check_block[skip_start:]
 
@@ -329,7 +329,8 @@ def test_release_concurrency_and_failure_reporting_are_scoped() -> None:
     assert "needs.build-and-test.result == 'failure'" in workflow
     assert "UPSTREAM_VER: ${{ steps.check_version.outputs.upstream_version || 'unknown' }}" not in workflow
     assert "cc @rNoz — Manual inspection required." in workflow
-    assert 'gh issue comment "$EXISTING_ISSUE"' in workflow
+    assert "suppressing duplicate notification" in workflow
+    assert 'gh issue comment "$EXISTING_ISSUE"' not in workflow
     build_block, report_block = workflow.split("  report-upstream-breakage:", 1)
     report_block = report_block.split("  publish:", 1)[0]
     assert "upstream_validation_failed:" in build_block

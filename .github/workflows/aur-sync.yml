@@ -127,11 +127,14 @@ jobs:
             echo "Scheduled run found no upstream change; skipping validation and build."
           fi
           if [ "${{ github.event_name }}" = "schedule" ] && [ "$RUN_CI" = "true" ]; then
-            OPEN_BREAKAGE=$(gh issue list --repo "$GITHUB_REPOSITORY" \
-              --label "upstream-breakage" --state open --json title --jq '.[].title')
-            if printf '%s\n' "$OPEN_BREAKAGE" | grep -Fxq "Upstream Compatibility Validation Failure: Factory CLI v${TARGET_VERSION}"; then
+            if ! OPEN_BREAKAGE=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+              --label "upstream-breakage" --state open --json number --jq '.[0].number // empty'); then
+              echo "::error::Unable to query open upstream-breakage issues." >&2
+              exit 1
+            fi
+            if [ -n "$OPEN_BREAKAGE" ]; then
               RUN_CI=false
-              echo "Scheduled run skipped: open upstream-breakage issue for v${TARGET_VERSION}."
+              echo "Scheduled run paused: open upstream-breakage issue #${OPEN_BREAKAGE}; manual intervention required."
             fi
           fi
           echo "run_ci=$RUN_CI" >> $GITHUB_OUTPUT
@@ -284,9 +287,7 @@ jobs:
               --label "upstream-breakage" \
               --body-file /tmp/issue-body.md
           else
-            echo "==> Breakage issue #$EXISTING_ISSUE is already open."
-            gh issue comment "$EXISTING_ISSUE" --repo "$GITHUB_REPOSITORY" \
-              --body "cc @rNoz — Upstream compatibility validation failed again for Factory CLI v${UPSTREAM_VER}. [Workflow run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})"
+            echo "==> Breakage issue #$EXISTING_ISSUE is already open; suppressing duplicate notification."
           fi
 
   publish:

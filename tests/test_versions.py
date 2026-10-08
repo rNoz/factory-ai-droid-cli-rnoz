@@ -580,6 +580,57 @@ def test_synthetic_fixtures() -> bool:
         return False
     print("  [PASS] Synthetic fixture: recorded non-tail title window is used without rediscovery")
 
+    original_test_variant = test_variant
+    tested_arches = []
+    version_runner_checks_passed = True
+
+    def fail_first_arch(ver: str, arch: str, prefer_cached: bool = False) -> bool:
+        tested_arches.append(arch)
+        return arch != ARCH_VARIANTS[0]
+
+    try:
+        globals()["test_variant"] = fail_first_arch
+        version_passed = test_version("9.9.9")
+    finally:
+        globals()["test_variant"] = original_test_variant
+
+    if version_passed or tested_arches != ARCH_VARIANTS:
+        print("  [FAIL] Synthetic fixture: a failed architecture skipped another variant")
+        version_runner_checks_passed = False
+    else:
+        print("  [PASS] Synthetic fixture: both architectures are tested for each release")
+
+    original_test_version = test_version
+    original_synthetic_fixtures = test_synthetic_fixtures
+    original_fetch_latest_version = fetch_latest_version
+    original_argv = sys.argv
+    tested_versions = []
+
+    def fail_latest(ver: str, prefer_cached: bool = False) -> bool:
+        tested_versions.append(ver)
+        return ver != "9.9.9"
+
+    try:
+        globals()["test_synthetic_fixtures"] = lambda: True
+        globals()["test_version"] = fail_latest
+        globals()["fetch_latest_version"] = lambda: "9.9.9"
+        sys.argv = ["test_versions.py", "--latest", "0.223.0"]
+        validation_status = main()
+    finally:
+        globals()["test_version"] = original_test_version
+        globals()["test_synthetic_fixtures"] = original_synthetic_fixtures
+        globals()["fetch_latest_version"] = original_fetch_latest_version
+        sys.argv = original_argv
+
+    if validation_status != 1 or tested_versions != ["9.9.9"]:
+        print("  [FAIL] Synthetic fixture: release validation continued after the first failure")
+        version_runner_checks_passed = False
+    else:
+        print("  [PASS] Synthetic fixture: release validation stops at the first failed release")
+
+    if not version_runner_checks_passed:
+        return False
+
     return True
 
 
@@ -960,10 +1011,11 @@ def fetch_latest_version() -> str:
 
 def test_version(ver: str, prefer_cached: bool = False) -> bool:
     print(f"Testing release v{ver} (both AVX2 and baseline)...")
+    passed = True
     for arch in ARCH_VARIANTS:
         if not test_variant(ver, arch, prefer_cached=prefer_cached):
-            return False
-    return True
+            passed = False
+    return passed
 
 
 def main() -> int:
@@ -989,18 +1041,14 @@ def main() -> int:
             versions = [latest, *versions]
         print(f"Including latest upstream release: {latest}")
     print(f"Running multi-version validation across {len(versions)} releases ({', '.join(ARCH_VARIANTS)})...")
-    failed = 0
     for v in versions:
         if not test_version(v, prefer_cached=args.cached):
-            failed += 1
+            print(f"\nStopping validation after v{v} failed; remaining releases were not tested.")
+            return 1
 
     print("\n" + "=" * 60)
-    if failed == 0:
-        print(f"ALL {len(versions)} RELEASES PASSED VALIDATION.")
-        return 0
-    else:
-        print(f"{failed}/{len(versions)} RELEASES FAILED VALIDATION.")
-        return 1
+    print(f"ALL {len(versions)} RELEASES PASSED VALIDATION.")
+    return 0
 
 
 if __name__ == "__main__":

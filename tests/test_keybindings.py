@@ -280,6 +280,30 @@ def test_rotates_binary_record_keymap_layout() -> None:
     assert patch_keybindings.apply_patch_bytes(patched) == patched
 
 
+def test_rotates_binary_record_with_unrelated_dispatch_handlers() -> None:
+    unrelated = (
+        b'if(!ie&&c.showMachines&&_n(Jt,"ctrl-g"))return Ut(),!0;'
+        + b" " * 32
+        + b'if(!ie&&c.showOther&&_n(Jt,"ctrl-i"))return Ot(),!0;'
+        + b" " * 32
+        + b'if(!ie&&c.showOther&&_n(Jt,"ctrl-p"))return Pt(),!0;'
+    )
+    original = binary_record_fixture() + b"|" + unrelated
+
+    patched = patch_keybindings.apply_patch_bytes(original)
+
+    assert all(
+        handler in patched
+        for handler in (
+            b'if(!ie&&c.showMachines&&_n(Jt,"ctrl-g"))return Ut(),!0;',
+            b'if(!ie&&c.showOther&&_n(Jt,"ctrl-i"))return Ot(),!0;',
+            b'if(!ie&&c.showOther&&_n(Jt,"ctrl-p"))return Pt(),!0;',
+        )
+    )
+    assert patch_keybindings.inventory_kinds(patched)["dispatch"] == "rotated"
+    assert patch_keybindings.apply_patch_bytes(patched) == patched
+
+
 def test_display_counts_permute() -> None:
     original = fixture()
     patched = patch_keybindings.apply_patch_bytes(original)
@@ -424,6 +448,7 @@ if __name__ == "__main__":
         test_rotates_runtime_key_registry,
         test_rotates_legacy_runtime_key_registry,
         test_rotates_binary_record_keymap_layout,
+        test_rotates_binary_record_with_unrelated_dispatch_handlers,
         test_display_counts_permute,
         test_refuses_ambiguous_bindings,
         test_refuses_unsafe_layouts,
