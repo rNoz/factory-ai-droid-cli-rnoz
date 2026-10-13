@@ -57,6 +57,7 @@ VERSIONS_TO_TEST = [
     "0.237.0",
     "0.238.0",
     "0.239.0",
+    "0.240.0",
 ]
 
 BASE_URL = "https://downloads.factory.ai/factory-cli/releases"
