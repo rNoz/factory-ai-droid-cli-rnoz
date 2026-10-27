@@ -177,6 +177,44 @@ def test_harvest_finds_adjacent_dispatch_with_unrelated_ctrl_g_handler() -> None
         raise AssertionError("unrelated Ctrl-G handler was modified")
 
 
+def test_harvest_finds_keymap_with_separate_model_cycle_record() -> None:
+    separate_model_key = test_keybindings.binary_record(b"model-cycle", 27, b"MMMM")
+    keymap = test_keybindings.keymap_table_binary_records(include_model_cycle=False)
+    rest = (
+        test_keybindings.binary_record_dispatch_block()
+        + test_keybindings.binary_record_model_cycle_descriptor()
+        + test_keybindings.runtime_key_registry()
+        + test_keybindings.display_block()
+        + TITLE_GUARD
+    )
+    tail_start = 2_000_000
+    total_size = tail_start + len(rest)
+    blobs = {50_000: separate_model_key, 100_000: keymap}
+    original = test_versions.fetch_range
+    fake = _range_fetch(blobs, total_size)
+    try:
+        test_versions.fetch_range = fake
+        cluster_harvest.fetch_range = fake
+        result = cluster_harvest.harvest_missing_clusters(
+            "https://example.invalid/droid",
+            total_size=total_size,
+            tail_start=tail_start,
+            tail_data=rest,
+            bun_sections=[(0, tail_start)],
+            keybindings=True,
+        )
+    finally:
+        test_versions.fetch_range = original
+        cluster_harvest.fetch_range = original
+
+    if result.error:
+        raise AssertionError(result.error)
+    assembled = test_versions.assemble_range_windows(result.windows + [(tail_start, rest)])
+    patched = patch_keybindings.apply_patch_bytes(assembled)
+    if patch_keybindings.inventory_kinds(patched)["keymap"] != "rotated":
+        raise AssertionError("harvested keymap with a separate model record was not rotated")
+
+
 def test_distant_display_hits_persist_small_windows() -> None:
     rest = (
         test_keybindings.keymap_table()
@@ -406,6 +444,7 @@ def main() -> int:
         test_inventory_uses_patcher_predicates,
         test_harvest_four_clusters_uses_small_windows,
         test_harvest_finds_adjacent_dispatch_with_unrelated_ctrl_g_handler,
+        test_harvest_finds_keymap_with_separate_model_cycle_record,
         test_distant_display_hits_persist_small_windows,
         test_vacuous_display_fails_closed,
         test_keymap_only_path_skips_raw_decoy,

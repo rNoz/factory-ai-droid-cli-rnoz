@@ -41,23 +41,21 @@ def binary_record(key: bytes, record_type: int, payload: bytes) -> bytes:
     return key + bytes((0, 0, record_type, 0, 0, 128)) + payload
 
 
-def keymap_table_binary_records() -> bytes:
+def keymap_table_binary_records(*, include_model_cycle: bool = True) -> bytes:
     """Serialized keymap table shape introduced by the v0.219 release."""
-    return b"".join(
-        (
-            binary_record(b"ctrl-b", 6, b"AAAA"),
-            binary_record(b"ctrl-d", 6, b"BBBB"),
-            binary_record(b"ctrl-g", 6, b"CCCC"),
-            binary_record(b"ctrl-n", 6, b"DDDD"),
-            binary_record(b"ctrl-p", 6, b"EEEE"),
-            binary_record(b"ctrl-slash", 10, b"FFFF"),
-            binary_record(b"mode-toggle", 11, b"GGGG"),
-            binary_record(b"model-cycle", 11, b"HHHH"),
-            b"Ctrl+N\x00",
-            binary_record(b"autonomy-cycle", 14, b"IIII"),
-            b"Ctrl+L\x00",
-        )
-    )
+    records = [
+        binary_record(b"ctrl-b", 6, b"AAAA"),
+        binary_record(b"ctrl-d", 6, b"BBBB"),
+        binary_record(b"ctrl-g", 6, b"CCCC"),
+        binary_record(b"ctrl-n", 6, b"DDDD"),
+        binary_record(b"ctrl-p", 6, b"EEEE"),
+        binary_record(b"ctrl-slash", 10, b"FFFF"),
+        binary_record(b"mode-toggle", 11, b"GGGG"),
+    ]
+    if include_model_cycle:
+        records.append(binary_record(b"model-cycle", 11, b"HHHH"))
+    records.extend((b"Ctrl+N\x00", binary_record(b"autonomy-cycle", 14, b"IIII"), b"Ctrl+L\x00"))
+    return b"".join(records)
 
 
 def binary_record_dispatch_block() -> bytes:
@@ -280,6 +278,29 @@ def test_rotates_binary_record_keymap_layout() -> None:
     assert patch_keybindings.apply_patch_bytes(patched) == patched
 
 
+def test_rotates_binary_record_keymap_with_separate_model_cycle_record() -> None:
+    original = b"|".join(
+        (
+            binary_record(b"model-cycle", 27, b"MMMM"),
+            keymap_table_binary_records(include_model_cycle=False),
+            binary_record_dispatch_block(),
+            binary_record_model_cycle_descriptor(),
+            runtime_key_registry(),
+            display_block(),
+        )
+    )
+
+    patched = patch_keybindings.apply_patch_bytes(original)
+
+    assert len(patched) == len(original)
+    assert binary_record(b"ctrl-i", 6, b"CCCC") in patched
+    assert binary_record(b"ctrl-g", 6, b"EEEE") in patched
+    assert binary_record(b"ctrl-p", 6, b"DDDD") in patched
+    assert binary_record(b"ctrl-n", 6, b"DDDD") not in patched
+    assert b'modelCycle:{id:"model-cycle",label:"Ctrl+P",matcher:(e)=>S8l(e,"p")}' in patched
+    assert patch_keybindings.apply_patch_bytes(patched) == patched
+
+
 def test_rotates_binary_record_with_unrelated_dispatch_handlers() -> None:
     unrelated = (
         b'if(!ie&&c.showMachines&&_n(Jt,"ctrl-g"))return Ut(),!0;'
@@ -374,6 +395,10 @@ def test_refuses_partially_patched_binaries() -> None:
 
 def test_refuses_unsafe_binary_record_layouts() -> None:
     expect_patch_error(binary_record_fixture() + b"|" + keymap_table_binary_records(), b"multiple")
+    missing_model_hotkey = binary_record_fixture().replace(
+        binary_record(b"ctrl-n", 6, b"DDDD"), b"", 1
+    )
+    expect_patch_error(missing_model_hotkey)
     guarded_editor = binary_record_fixture().replace(
         b'"ctrl-p")&&!pi&&!Kr', b'"ctrl-p")&&Go&&!pi&&!Kr', 1
     )
@@ -448,6 +473,7 @@ if __name__ == "__main__":
         test_rotates_runtime_key_registry,
         test_rotates_legacy_runtime_key_registry,
         test_rotates_binary_record_keymap_layout,
+        test_rotates_binary_record_keymap_with_separate_model_cycle_record,
         test_rotates_binary_record_with_unrelated_dispatch_handlers,
         test_display_counts_permute,
         test_refuses_ambiguous_bindings,
