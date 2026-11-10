@@ -70,6 +70,7 @@ VERSIONS_TO_TEST = [
     "1.4.1",
     "1.5.0",
     "1.6.0",
+    "1.6.1",
 ]
 
 BASE_URL = "https://downloads.factory.ai/factory-cli/releases"
